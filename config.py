@@ -7,16 +7,22 @@ class Config:
     # Détection environnement Vercel / Render
     IS_SERVERLESS = os.environ.get('VERCEL') or os.environ.get('RENDER')
     
-    # Par défaut, on utilise SQLite pour la stabilité du MVP
+    # Choix de la base de données
     DATABASE_URL = os.environ.get('DATABASE_URL')
     
-    # Force SQLite en local, n'utilise Postgres que si DATABASE_URL est explicitement présent et qu'on n'est pas en local
-    if DATABASE_URL and IS_SERVERLESS:
+    if DATABASE_URL:
+        # Si une URL est fournie, on l'utilise (Postgres sur Vercel/Supabase)
         DATABASE = DATABASE_URL
         DB_TYPE = 'postgres'
     else:
+        # Sinon SQLite par défaut
         DB_TYPE = 'sqlite'
-        DATABASE = 'database/trailmemoire.db'
+        if IS_SERVERLESS:
+            # Sur Vercel, SQLite ne peut écrire que dans /tmp
+            DATABASE = '/tmp/trailmemoire.db'
+        else:
+            # En local, on utilise le dossier database/
+            DATABASE = 'database/trailmemoire.db'
         
     DEBUG = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
     WTF_CSRF_ENABLED = True

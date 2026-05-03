@@ -15,6 +15,17 @@ def get_db():
         db_type = current_app.config.get('DB_TYPE', 'sqlite')
         db_url = current_app.config['DATABASE']
         
+        # Sur Vercel, si le fichier SQLite n'existe pas dans /tmp, on doit l'initialiser
+        if db_type == 'sqlite' and current_app.config.get('IS_SERVERLESS'):
+            if not os.path.exists(db_url):
+                # On s'assure que le dossier parent existe
+                os.makedirs(os.path.dirname(db_url), exist_ok=True)
+                # On force l'initialisation du schéma
+                with current_app.open_resource('database/schema.sql') as f:
+                    conn = sqlite3.connect(db_url)
+                    conn.executescript(f.read().decode('utf8'))
+                    conn.close()
+
         if db_type == 'postgres' and psycopg2:
             conn = psycopg2.connect(db_url)
             g.db = PostgresWrapper(conn)
