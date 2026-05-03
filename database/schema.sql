@@ -1,7 +1,7 @@
 -- T.R.A.I.L — Terrain Rando Alerte Info Live
--- Schéma de base de données — SQLite 3
+-- Schéma de base de données — SQLite 3 / PostgreSQL Compatible
 
-CREATE TABLE IF NOT EXISTS user (
+CREATE TABLE IF NOT EXISTS users (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     nom              VARCHAR(100)  NOT NULL,
     email            VARCHAR(150)  UNIQUE NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS sentier (
     description         TEXT,
     user_id             INTEGER      NOT NULL,
     date_ajout          DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Rapport de conditions : entité métier principale
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS rapport (
     -- ex: neige,boue | verglas | arbre_tombe,crue | travaux
     obstacles        TEXT,
     commentaire      TEXT,
-    FOREIGN KEY (user_id)    REFERENCES user(id)     ON DELETE CASCADE,
+    FOREIGN KEY (user_id)    REFERENCES users(id)     ON DELETE CASCADE,
     FOREIGN KEY (sentier_id) REFERENCES sentier(id)  ON DELETE CASCADE
 );
 

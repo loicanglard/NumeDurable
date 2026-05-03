@@ -73,6 +73,13 @@ flask --app app run
 ```
 
 Le site est accessible sur `http://127.0.0.1:5000`.
+-------
+
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+
+
+puis :
+python app.py
 
 ---
 
@@ -159,3 +166,7 @@ ci:    configuration GitHub Actions
 | Score EcoIndex | A ou B |
 | Score Lighthouse Performance | > 85 / 100 |
 | CO₂ / visite (Website Carbon) | < 0,05 g |
+
+
+-------
+supabase - mdp : -H56MgJhB3ygM3B

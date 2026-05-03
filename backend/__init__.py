@@ -61,7 +61,7 @@ def create_app():
             print(f"DEBUG: load_user called with ID {user_id}", file=sys.stderr)
             uid = int(user_id)
             db = get_db()
-            row = db.execute('SELECT * FROM user WHERE id = ?', (uid,)).fetchone()
+            row = db.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
             if row:
                 print(f"DEBUG: load_user success for {row['nom']}", file=sys.stderr)
                 return User(row)
@@ -111,7 +111,7 @@ def create_app():
                        ROUND((julianday('now') - julianday(r.date_rapport)) * 24) as heures
                 FROM rapport r
                 JOIN sentier s ON r.sentier_id = s.id
-                JOIN user u ON r.user_id = u.id
+                JOIN users u ON r.user_id = u.id
                 WHERE r.date_expiration > datetime('now')
                 ORDER BY r.date_rapport DESC
                 LIMIT 5

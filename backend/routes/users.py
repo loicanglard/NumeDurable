@@ -44,10 +44,10 @@ def profil_modifier():
 
     if mdp:
         mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        db.execute('UPDATE user SET nom=?, niveau=?, localisation=?, mdp_hash=? WHERE id=?',
+        db.execute('UPDATE users SET nom=?, niveau=?, localisation=?, mdp_hash=? WHERE id=?',
                    (nom, niveau, localisation or None, mdp_hash, current_user.id))
     else:
-        db.execute('UPDATE user SET nom=?, niveau=?, localisation=? WHERE id=?',
+        db.execute('UPDATE users SET nom=?, niveau=?, localisation=? WHERE id=?',
                    (nom, niveau, localisation or None, current_user.id))
     db.commit()
     flash('Profil mis à jour.', 'succes')
@@ -58,7 +58,7 @@ def profil_modifier():
 @login_required
 def supprimer():
     db = get_db()
-    db.execute('DELETE FROM user WHERE id = ?', (current_user.id,))
+    db.execute('DELETE FROM users WHERE id = ?', (current_user.id,))
     db.commit()
     from flask_login import logout_user
     logout_user()
@@ -69,7 +69,7 @@ def supprimer():
 @users_bp.route('/<int:id>')
 def public(id):
     db = get_db()
-    user = db.execute('SELECT id, nom, niveau, localisation, date_inscription FROM user WHERE id = ?', (id,)).fetchone()
+    user = db.execute('SELECT id, nom, niveau, localisation, date_inscription FROM users WHERE id = ?', (id,)).fetchone()
     if not user:
         flash('Utilisateur introuvable.', 'erreur')
         return redirect(url_for('sentiers.index'))
