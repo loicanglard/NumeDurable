@@ -55,6 +55,8 @@ def create_app():
     @login_manager.user_loader
     def load_user(user_id):
         import sys
+        if not user_id or user_id == 'None':
+            return None
         try:
             print(f"DEBUG: load_user called with ID {user_id}", file=sys.stderr)
             uid = int(user_id)
@@ -63,10 +65,10 @@ def create_app():
             if row:
                 print(f"DEBUG: load_user success for {row['nom']}", file=sys.stderr)
                 return User(row)
-            print("DEBUG: load_user failed: User not found in DB", file=sys.stderr)
+            print(f"DEBUG: load_user failed: User {uid} not found", file=sys.stderr)
             return None
         except Exception as e:
-            print(f"DEBUG: load_user EXCEPTION: {e}", file=sys.stderr)
+            print(f"DEBUG: load_user EXCEPTION: {type(e).__name__}: {e}", file=sys.stderr)
             return None
 
     # Error logging global pour debugger les 500 sur Vercel
