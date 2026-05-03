@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
 import bcrypt
+from datetime import datetime
 from backend.db import get_db
 from backend.models import User
 
@@ -48,8 +49,8 @@ def inscription():
 
             mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             cur = db.execute(
-                'INSERT INTO user (nom, email, mdp_hash, niveau, localisation) VALUES (?, ?, ?, ?, ?)',
-                (nom, email, mdp_hash, niveau, localisation or None)
+                'INSERT INTO user (nom, email, mdp_hash, niveau, localisation, date_inscription) VALUES (?, ?, ?, ?, ?, ?)',
+                (nom, email, mdp_hash, niveau, localisation or None, datetime.utcnow())
             )
             db.commit()
             

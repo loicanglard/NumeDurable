@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from flask import Flask, render_template
+from flask import Flask, render_template, render_template_string
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 
@@ -62,7 +62,8 @@ def create_app():
         import sys
         print("--- TRACEBACK 500 ---", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        return """
+        
+        template = """
         {% extends "base.html" %}
         {% block contenu %}
         <div class="card mt-4 text-center">
@@ -71,7 +72,8 @@ def create_app():
             <a href="/" class="btn btn-primary mt-2">Retour à l'accueil</a>
         </div>
         {% endblock %}
-        """, 500
+        """
+        return render_template_string(template), 500
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
