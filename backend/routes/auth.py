@@ -39,20 +39,29 @@ def inscription():
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)
 
         db = get_db()
-        existant = db.execute('SELECT id FROM user WHERE email = ?', (email,)).fetchone()
-        if existant:
-            flash('Cet email est déjà utilisé.', 'erreur')
+        try:
+            existant = db.execute('SELECT id FROM user WHERE email = ?', (email,)).fetchone()
+            if existant:
+                flash('Cet email est déjà utilisé.', 'erreur')
+                return render_template('auth/inscription.html',
+                                       nom=nom, email=email, niveau=niveau, localisation=localisation)
+
+            mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            db.execute(
+                'INSERT INTO user (nom, email, mdp_hash, niveau, localisation) VALUES (?, ?, ?, ?, ?)',
+                (nom, email, mdp_hash, niveau, localisation or None)
+            )
+            db.commit()
+            flash('Compte créé avec succès ! Vous pouvez vous connecter.', 'succes')
+            return redirect(url_for('auth.connexion'))
+        except Exception as e:
+            if db: db.rollback()
+            # Log de l'erreur pour le debug (visible dans les logs Vercel/console)
+            import sys
+            print(f"CRASH INSCRIPTION: {str(e)}", file=sys.stderr)
+            flash(f"Erreur lors de l'inscription : {str(e)}", 'erreur')
             return render_template('auth/inscription.html',
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)
-
-        mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        db.execute(
-            'INSERT INTO user (nom, email, mdp_hash, niveau, localisation) VALUES (?, ?, ?, ?, ?)',
-            (nom, email, mdp_hash, niveau, localisation or None)
-        )
-        db.commit()
-        flash('Compte créé avec succès ! Vous pouvez vous connecter.', 'succes')
-        return redirect(url_for('auth.connexion'))
 
     return render_template('auth/inscription.html')
 
