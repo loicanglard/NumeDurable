@@ -1,4 +1,5 @@
 import sqlite3
+import os
 import click
 from flask import current_app, g
 
@@ -23,11 +24,18 @@ def close_db(e=None):
 def init_db(app):
     app.teardown_appcontext(close_db)
 
-    # Auto-initialisation au démarrage (CREATE TABLE IF NOT EXISTS = sans danger)
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('database/schema.sql') as f:
-            db.executescript(f.read().decode('utf8'))
+    # Auto-initialisation au démarrage uniquement si nécessaire
+    # Sur Vercel, /tmp est vidé régulièrement, donc on réinitialise si le fichier n'existe pas
+    db_path = app.config.get('DATABASE')
+    if db_path and (not os.path.exists(db_path) or os.path.getsize(db_path) == 0):
+        with app.app_context():
+            try:
+                db = get_db()
+                with app.open_resource('database/schema.sql') as f:
+                    db.executescript(f.read().decode('utf8'))
+                print(f"Database initialized at {db_path}")
+            except Exception as e:
+                print(f"Error initializing database: {e}")
 
     @app.cli.command('init-db')
     def init_db_command():

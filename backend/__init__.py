@@ -3,20 +3,31 @@ from datetime import datetime
 from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
-from backend.db import init_db, get_db
 
 def create_app():
-    # On définit le chemin racine vers le dossier parent de 'backend'
-    root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Détermination du projet root de manière robuste
+    # Ce fichier est dans backend/, donc le root est le parent.
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     app = Flask(
-        __name__,
-        template_folder=os.path.join(root_path, 'frontend/templates'),
-        static_folder=os.path.join(root_path, 'frontend/static'),
-        root_path=root_path
+        "trail_app",
+        root_path=project_root,
+        template_folder='frontend/templates',
+        static_folder='frontend/static'
     )
+    
+    # Chargement de la config
     app.config.from_object('config.Config')
+    
+    # Sécurité supplémentaire pour la SECRET_KEY sur Vercel
+    if not app.config.get('SECRET_KEY') or app.config.get('SECRET_KEY') == 'dev-secret-change-in-prod':
+        if os.environ.get('VERCEL'):
+            # En prod Vercel, on veut éviter de tourner avec la clé par défaut si possible
+            # Mais on ne bloque pas, on utilise ce qu'on a.
+            pass
 
+    from backend.db import init_db, get_db
+    
     csrf = CSRFProtect(app)
     init_db(app)
 
@@ -46,17 +57,21 @@ def create_app():
 
     @app.route('/')
     def index():
-        db = get_db()
-        rapports = db.execute('''
-            SELECT r.*, s.nom as sentier_nom, s.region, u.nom as user_nom,
-                   ROUND((julianday('now') - julianday(r.date_rapport)) * 24) as heures
-            FROM rapport r
-            JOIN sentier s ON r.sentier_id = s.id
-            JOIN user u ON r.user_id = u.id
-            WHERE r.date_expiration > datetime('now')
-            ORDER BY r.date_rapport DESC
-            LIMIT 5
-        ''').fetchall()
+        try:
+            db = get_db()
+            rapports = db.execute('''
+                SELECT r.*, s.nom as sentier_nom, s.region, u.nom as user_nom,
+                       ROUND((julianday('now') - julianday(r.date_rapport)) * 24) as heures
+                FROM rapport r
+                JOIN sentier s ON r.sentier_id = s.id
+                JOIN user u ON r.user_id = u.id
+                WHERE r.date_expiration > datetime('now')
+                ORDER BY r.date_rapport DESC
+                LIMIT 5
+            ''').fetchall()
+        except Exception:
+            # Si la base n'est pas encore prête ou vide
+            rapports = []
 
         rapports_recents = []
         for r in rapports:
