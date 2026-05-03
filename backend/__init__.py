@@ -46,9 +46,23 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(user_id):
-        db = get_db()
-        row = db.execute('SELECT * FROM user WHERE id = ?', (user_id,)).fetchone()
-        return User(row) if row else None
+        try:
+            # Important : Postgres est strict sur les types, id est INTEGER
+            uid = int(user_id)
+            db = get_db()
+            row = db.execute('SELECT * FROM user WHERE id = ?', (uid,)).fetchone()
+            return User(row) if row else None
+        except (ValueError, TypeError, Exception):
+            return None
+
+    # Error logging global pour debugger les 500 sur Vercel
+    @app.errorhandler(500)
+    def internal_error(error):
+        import traceback
+        import sys
+        print("--- TRACEBACK 500 ---", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return render_template('base.html', contenu="Une erreur interne est survenue. Veuillez réessayer."), 500
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)

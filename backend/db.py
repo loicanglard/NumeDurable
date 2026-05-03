@@ -40,24 +40,22 @@ class PostgresWrapper:
         return getattr(self.conn, name)
 
     def execute(self, sql, params=()):
-        # Traduction basique SQL: ? -> %s
-        sql = sql.replace('?', '%s')
+        # Traduction plus robuste SQL
+        sql_clean = sql.replace('?', '%s')
+        sql_clean = sql_clean.replace("datetime('now')", "CURRENT_TIMESTAMP")
         
-        # Compatibilité date
-        sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
-        
-        # Correction spécifique pour le calcul des heures sur la home
-        if "julianday" in sql:
-            sql = sql.replace("ROUND((julianday('now') - julianday(r.date_rapport)) * 24)", 
-                              "ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - r.date_rapport)) / 3600)")
+        # Gestion multi-ligne et espaces pour les calculs de dates
+        import re
+        sql_clean = re.sub(r"ROUND\(\(julianday\('now'\)\s*-\s*julianday\((.*?)\)\)\s*\*\s*24\)", 
+                           r"ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - \1)) / 3600)", sql_clean, flags=re.IGNORECASE)
+        sql_clean = re.sub(r"julianday\('now'\)", "EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)/86400", sql_clean, flags=re.IGNORECASE)
 
-        # Gestion lastrowid (Postgres nécessite RETURNING id)
-        is_insert = sql.strip().upper().startswith('INSERT')
-        if is_insert and 'RETURNING' not in sql.upper():
-            sql += ' RETURNING id'
+        is_insert = sql_clean.strip().upper().startswith('INSERT')
+        if is_insert and 'RETURNING' not in sql_clean.upper():
+            sql_clean += ' RETURNING id'
 
         cur = self.conn.cursor(cursor_factory=DictCursor)
-        cur.execute(sql, params)
+        cur.execute(sql_clean, params)
         
         if is_insert:
             try:
