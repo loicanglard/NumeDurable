@@ -71,6 +71,8 @@ def detail(id):
 @sentiers_bp.route('/nouveau', methods=['GET', 'POST'])
 @login_required
 def nouveau():
+    import sys
+    print(f"DEBUG: ACCESS NOUVEAU - Auth: {current_user.is_authenticated}, ID: {getattr(current_user, 'id', 'N/A')}", file=sys.stderr)
     if request.method == 'POST':
         nom = request.form.get('nom', '').strip()
         region = request.form.get('region', '').strip()

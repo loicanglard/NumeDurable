@@ -111,6 +111,9 @@ def connexion():
         if row and bcrypt.checkpw(mdp.encode('utf-8'), row['mdp_hash'].encode('utf-8')):
             user = User(row)
             login_user(user, remember=bool(request.form.get('souvenir')))
+            import sys
+            from flask import session
+            print(f"DEBUG: LOGIN SUCCESS - User: {user.nom}, Session: {list(session.keys())}", file=sys.stderr)
             flash(f'Content de vous revoir, {user.nom} !', 'succes')
             
             next_page = request.args.get('next')

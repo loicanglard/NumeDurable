@@ -46,13 +46,19 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(user_id):
+        import sys
         try:
-            # Important : Postgres est strict sur les types, id est INTEGER
+            print(f"DEBUG: load_user called with ID {user_id}", file=sys.stderr)
             uid = int(user_id)
             db = get_db()
             row = db.execute('SELECT * FROM user WHERE id = ?', (uid,)).fetchone()
-            return User(row) if row else None
-        except (ValueError, TypeError, Exception):
+            if row:
+                print(f"DEBUG: load_user success for {row['nom']}", file=sys.stderr)
+                return User(row)
+            print("DEBUG: load_user failed: User not found in DB", file=sys.stderr)
+            return None
+        except Exception as e:
+            print(f"DEBUG: load_user EXCEPTION: {e}", file=sys.stderr)
             return None
 
     # Error logging global pour debugger les 500 sur Vercel
