@@ -52,23 +52,31 @@ def create_app():
         flash(f"Session expirée ou erreur de sécurité. Veuillez réessayer. ({e.description})", 'erreur')
         return redirect(request.url)
 
+    @app.before_request
+    def debug_auth():
+        if request.path.startswith('/static'): return
+        import sys
+        from flask_login import current_user
+        from flask import session
+        print(f"DEBUG REQUEST [{request.method}] {request.path}: auth={current_user.is_authenticated}, id={getattr(current_user, 'id', 'Anonymous')}, session_keys={list(session.keys())}", file=sys.stderr)
+
     @login_manager.user_loader
     def load_user(user_id):
         import sys
+        print(f"DEBUG USER_LOADER: received user_id='{user_id}' (type={type(user_id)})", file=sys.stderr)
         if not user_id or user_id == 'None':
             return None
         try:
-            print(f"DEBUG: load_user called with ID {user_id}", file=sys.stderr)
             uid = int(user_id)
             db = get_db()
             row = db.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
             if row:
-                print(f"DEBUG: load_user success for {row['nom']}", file=sys.stderr)
+                print(f"DEBUG USER_LOADER: found user '{row['nom']}' (id={row['id']})", file=sys.stderr)
                 return User(row)
-            print(f"DEBUG: load_user failed: User {uid} not found", file=sys.stderr)
+            print(f"DEBUG USER_LOADER: user {uid} not found in database", file=sys.stderr)
             return None
         except Exception as e:
-            print(f"DEBUG: load_user EXCEPTION: {type(e).__name__}: {e}", file=sys.stderr)
+            print(f"DEBUG USER_LOADER EXCEPTION: {type(e).__name__}: {e}", file=sys.stderr)
             return None
 
     # Error logging global pour debugger les 500 sur Vercel
