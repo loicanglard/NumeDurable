@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from flask import Flask, render_template, render_template_string
+from flask import Flask, render_template, render_template_string, flash, redirect, request
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 
@@ -43,6 +43,14 @@ def create_app():
     from backend.routes.users import users_bp
     from backend.routes.sentiers import sentiers_bp
     from backend.routes.rapports import rapports_bp
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        import sys
+        print(f"DEBUG: CSRF ERROR - {e.description}", file=sys.stderr)
+        flash(f"Session expirée ou erreur de sécurité. Veuillez réessayer. ({e.description})", 'erreur')
+        return redirect(request.url)
 
     @login_manager.user_loader
     def load_user(user_id):
