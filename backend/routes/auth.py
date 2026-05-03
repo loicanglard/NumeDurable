@@ -41,34 +41,45 @@ def inscription():
 
         db = get_db()
         try:
+            import sys
+            print("DEBUG: Checking existing email", file=sys.stderr)
             existant = db.execute('SELECT id FROM user WHERE email = ?', (email,)).fetchone()
             if existant:
                 flash('Cet email est déjà utilisé.', 'erreur')
                 return render_template('auth/inscription.html',
                                        nom=nom, email=email, niveau=niveau, localisation=localisation)
 
+            print("DEBUG: Hashing password", file=sys.stderr)
             mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            
+            print("DEBUG: Executing INSERT", file=sys.stderr)
             cur = db.execute(
                 'INSERT INTO user (nom, email, mdp_hash, niveau, localisation, date_inscription) VALUES (?, ?, ?, ?, ?, ?)',
                 (nom, email, mdp_hash, niveau, localisation or None, datetime.utcnow())
             )
+            print("DEBUG: Committing", file=sys.stderr)
             db.commit()
             
+            print(f"DEBUG: Auto-login for ID {cur.lastrowid}", file=sys.stderr)
             # Connexion automatique après inscription
             user_row = db.execute('SELECT * FROM user WHERE id = ?', (cur.lastrowid,)).fetchone()
             if user_row:
                 user = User(user_row)
                 login_user(user)
+                print(f"DEBUG: Login success for {user.nom}", file=sys.stderr)
                 flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', 'succes')
                 return redirect(url_for('sentiers.index'))
             
+            print("DEBUG: Fallback to connexion page", file=sys.stderr)
             flash('Compte créé ! Veuillez vous connecter.', 'succes')
             return redirect(url_for('auth.connexion'))
             
         except Exception as e:
             if db: db.rollback()
             import sys
+            import traceback
             print(f"CRASH INSCRIPTION: {str(e)}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             flash(f"Erreur lors de l'inscription : {str(e)}", 'erreur')
             return render_template('auth/inscription.html',
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)

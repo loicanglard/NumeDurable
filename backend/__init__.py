@@ -60,20 +60,26 @@ def create_app():
     def internal_error(error):
         import traceback
         import sys
+        tb = traceback.format_exc()
         print("--- TRACEBACK 500 ---", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        print(tb, file=sys.stderr)
         
         template = """
         {% extends "base.html" %}
         {% block contenu %}
-        <div class="card mt-4 text-center">
-            <h1>Oups ! Une erreur est survenue.</h1>
-            <p class="text-soft mt-1">L'équipe technique a été prévenue. Veuillez réessayer dans quelques instants.</p>
-            <a href="/" class="btn btn-primary mt-2">Retour à l'accueil</a>
+        <div class="card mt-4">
+            <h1 style="color: var(--status-red);">Oups ! Une erreur interne est survenue.</h1>
+            <p class="text-soft mt-1">Détails de l'erreur pour le debug :</p>
+            <pre style="background: #111; color: #ff5555; padding: 1rem; border-radius: 5px; overflow-x: auto; font-family: monospace; font-size: 0.85rem; margin-top: 1rem;">
+{{ traceback }}
+            </pre>
+            <div class="mt-2">
+                <a href="/" class="btn btn-primary">Retour à l'accueil</a>
+            </div>
         </div>
         {% endblock %}
         """
-        return render_template_string(template), 500
+        return render_template_string(template, traceback=tb), 500
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
