@@ -47,16 +47,25 @@ def inscription():
                                        nom=nom, email=email, niveau=niveau, localisation=localisation)
 
             mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            db.execute(
+            cur = db.execute(
                 'INSERT INTO user (nom, email, mdp_hash, niveau, localisation) VALUES (?, ?, ?, ?, ?)',
                 (nom, email, mdp_hash, niveau, localisation or None)
             )
             db.commit()
-            flash('Compte créé avec succès ! Vous pouvez vous connecter.', 'succes')
+            
+            # Connexion automatique après inscription
+            user_row = db.execute('SELECT * FROM user WHERE id = ?', (cur.lastrowid,)).fetchone()
+            if user_row:
+                user = User(user_row)
+                login_user(user)
+                flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', 'succes')
+                return redirect(url_for('sentiers.index'))
+            
+            flash('Compte créé ! Veuillez vous connecter.', 'succes')
             return redirect(url_for('auth.connexion'))
+            
         except Exception as e:
             if db: db.rollback()
-            # Log de l'erreur pour le debug (visible dans les logs Vercel/console)
             import sys
             print(f"CRASH INSCRIPTION: {str(e)}", file=sys.stderr)
             flash(f"Erreur lors de l'inscription : {str(e)}", 'erreur')
@@ -64,6 +73,15 @@ def inscription():
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)
 
     return render_template('auth/inscription.html')
+
+
+def is_safe_url(target):
+    # Sécurité minimale : l'URL doit être relative (commence par /) et non externe
+    from urllib.parse import urlparse, urljoin
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and \
+           ref_url.netloc == test_url.netloc
 
 
 @auth_bp.route('/connexion', methods=['GET', 'POST'])
@@ -81,9 +99,12 @@ def connexion():
         if row and bcrypt.checkpw(mdp.encode('utf-8'), row['mdp_hash'].encode('utf-8')):
             user = User(row)
             login_user(user, remember=bool(request.form.get('souvenir')))
-            flash(f'Bienvenue, {user.nom} !', 'succes')
+            flash(f'Content de vous revoir, {user.nom} !', 'succes')
+            
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('sentiers.index'))
+            if next_page and is_safe_url(next_page):
+                return redirect(next_page)
+            return redirect(url_for('sentiers.index'))
         else:
             flash('Email ou mot de passe incorrect.', 'erreur')
 
