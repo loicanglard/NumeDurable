@@ -41,11 +41,14 @@
         </form>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
-        <h3 style="color:var(--status-red)">Zone dangereuse</h3>
-        <form method="post" action="{{ url_for('users.supprimer') }}" onsubmit="return confirm('Supprimer définitivement votre compte ?')">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn" style="background:var(--status-red);color:#fff;border-color:var(--status-red)">Supprimer mon compte</button>
-        </form>
+        <h3 style="color:var(--status-red)">Actions de compte</h3>
+        <div style="display:flex;gap:1rem;margin-top:1rem">
+            <a href="{{ url_for('auth.deconnexion') }}" class="btn btn-secondary">Se déconnecter</a>
+            <form method="post" action="{{ url_for('users.supprimer') }}" onsubmit="return confirm('Supprimer définitivement votre compte ?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn" style="background:var(--status-red);color:#fff;border-color:var(--status-red)">Supprimer le compte</button>
+            </form>
+        </div>
     </section>
 
     <div>

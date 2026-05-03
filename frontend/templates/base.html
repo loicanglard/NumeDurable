@@ -23,7 +23,7 @@
             <a href="{{ url_for('sentiers.index') }}" class="{% if request.blueprint == 'sentiers' %}active{% endif %}">Sentiers</a>
             {% if current_user.is_authenticated %}
                 <a href="{{ url_for('users.profil') }}" class="{% if request.blueprint == 'users' %}active{% endif %}">Profil</a>
-                <a href="{{ url_for('auth.deconnexion') }}" class="btn btn-ghost">Quitter</a>
+                <a href="{{ url_for('auth.deconnexion') }}" class="btn btn-ghost">Déconnexion</a>
             {% else %}
                 <a href="{{ url_for('auth.connexion') }}">Connexion</a>
                 <a href="{{ url_for('auth.inscription') }}" class="btn btn-primary">S'inscrire</a>
