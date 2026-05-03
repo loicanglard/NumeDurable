@@ -20,16 +20,49 @@ def get_db():
             g.db = PostgresWrapper(conn)
         else:
             # SQLite par défaut
-            g.db = sqlite3.connect(
+            conn = sqlite3.connect(
                 db_url,
                 detect_types=sqlite3.PARSE_DECLTYPES
             )
-            g.db.row_factory = sqlite3.Row
+            conn.row_factory = sqlite3.Row
             try:
-                g.db.execute('PRAGMA foreign_keys = ON')
+                conn.execute('PRAGMA foreign_keys = ON')
             except sqlite3.Error:
                 pass
+            # Utilisation d'un wrapper pour gérer la compatibilité 'user'/'users'
+            g.db = SQLiteWrapper(conn)
     return g.db
+
+class SQLiteWrapper:
+    """Wrapper pour SQLite gérant la compatibilité des noms de tables (users/user)"""
+    def __init__(self, conn):
+        self.conn = conn
+        # On vérifie quelle table existe
+        try:
+            res = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+            self.has_users_table = res is not None
+        except Exception:
+            self.has_users_table = False
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+    def execute(self, sql, params=()):
+        # Si on a l'ancienne table 'user' mais que le code demande 'users'
+        if not self.has_users_table and 'users' in sql.lower():
+            # Remplacement intelligent de users par "user" (mot réservé)
+            import re
+            sql = re.sub(r'\busers\b', '"user"', sql, flags=re.IGNORECASE)
+        return self.conn.execute(sql, params)
+
+    def executescript(self, sql):
+        return self.conn.executescript(sql)
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
 
 class PostgresWrapper:
     """Wrapper pour simuler l'API sqlite3 avec psycopg2"""

@@ -71,9 +71,6 @@ def detail(id):
 @sentiers_bp.route('/nouveau', methods=['GET', 'POST'])
 @login_required
 def nouveau():
-    import sys
-    from flask import session
-    print(f"DEBUG NOUVEAU: auth={current_user.is_authenticated}, id={getattr(current_user, 'id', 'N/A')}, session={list(session.keys())}", file=sys.stderr)
     if request.method == 'POST':
         nom = request.form.get('nom', '').strip()
         region = request.form.get('region', '').strip()

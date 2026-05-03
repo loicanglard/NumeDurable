@@ -13,9 +13,6 @@ OBSTACLES_POSSIBLES = ['neige', 'boue', 'verglas', 'arbre_tombe', 'crue', 'trava
 @rapports_bp.route('/nouveau', methods=['GET', 'POST'])
 @login_required
 def nouveau():
-    import sys
-    from flask import session
-    print(f"DEBUG RAPPORT NOUVEAU: auth={current_user.is_authenticated}, id={getattr(current_user, 'id', 'N/A')}, session={list(session.keys())}", file=sys.stderr)
     sentier_id = request.args.get('sentier_id', type=int)
     db = get_db()
     sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (sentier_id,)).fetchone() if sentier_id else None

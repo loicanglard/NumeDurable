@@ -110,16 +110,8 @@ def connexion():
 
         if row and bcrypt.checkpw(mdp.encode('utf-8'), row['mdp_hash'].encode('utf-8')):
             user = User(row)
-            from flask import session
             login_user(user, remember=True)
             
-            import sys
-            print(f"DEBUG AUTH_LOGIN: user_id={user.id}, is_authenticated={current_user.is_authenticated}, session_keys={list(session.keys())}", file=sys.stderr)
-            
-            # Rendre la session persistante
-            session.permanent = True
-            
-            print(f"DEBUG: LOGIN SUCCESS - User: {user.nom}, ID: {user.id}, Session keys: {list(session.keys())}", file=sys.stderr)
             flash(f'Content de vous revoir, {user.nom} !', 'succes')
             
             next_page = request.args.get('next')

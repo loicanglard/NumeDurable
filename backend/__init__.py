@@ -48,36 +48,28 @@ def create_app():
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
         import sys
-        print(f"DEBUG: CSRF ERROR - {e.description}", file=sys.stderr)
         flash(f"Session expirée ou erreur de sécurité. Veuillez réessayer. ({e.description})", 'erreur')
         return redirect(request.url)
 
-    @app.before_request
-    def debug_auth():
-        if request.path.startswith('/static'): return
-        import sys
-        from flask_login import current_user
-        from flask import session
-        print(f"DEBUG REQUEST [{request.method}] {request.path}: auth={current_user.is_authenticated}, id={getattr(current_user, 'id', 'Anonymous')}, session_keys={list(session.keys())}", file=sys.stderr)
-
     @login_manager.user_loader
     def load_user(user_id):
-        import sys
-        print(f"DEBUG USER_LOADER: received user_id='{user_id}' (type={type(user_id)})", file=sys.stderr)
-        if not user_id or user_id == 'None':
+        if not user_id:
             return None
         try:
-            uid = int(user_id)
             db = get_db()
-            row = db.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
+            # On utilise 'users' car c'est le nouveau standard du projet compatible Postgres/SQLite
+            row = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
             if row:
-                print(f"DEBUG USER_LOADER: found user '{row['nom']}' (id={row['id']})", file=sys.stderr)
                 return User(row)
-            print(f"DEBUG USER_LOADER: user {uid} not found in database", file=sys.stderr)
-            return None
-        except Exception as e:
-            print(f"DEBUG USER_LOADER EXCEPTION: {type(e).__name__}: {e}", file=sys.stderr)
-            return None
+        except Exception:
+            # Fallback vers 'user' si 'users' n'existe pas encore dans la BDD locale
+            try:
+                row = db.execute('SELECT * FROM "user" WHERE id = ?', (user_id,)).fetchone()
+                if row:
+                    return User(row)
+            except Exception:
+                pass
+        return None
 
     # Error logging global pour debugger les 500 sur Vercel
     @app.errorhandler(500)
