@@ -10,15 +10,15 @@ class Config:
     # URL de base de données (PostgreSQL en prod, SQLite en local)
     DATABASE_URL = os.environ.get('DATABASE_URL')
     
-    if DATABASE_URL:
+    if DATABASE_URL and ('postgres' in DATABASE_URL or 'postgresql' in DATABASE_URL):
         DATABASE = DATABASE_URL
         DB_TYPE = 'postgres'
-    elif IS_SERVERLESS:
-        DATABASE = '/tmp/trailmemoire.db'
-        DB_TYPE = 'sqlite'
     else:
-        DATABASE = os.environ.get('DATABASE_URL', 'database/trailmemoire.db')
         DB_TYPE = 'sqlite'
+        if IS_SERVERLESS:
+            DATABASE = '/tmp/trailmemoire.db'
+        else:
+            DATABASE = DATABASE_URL or 'database/trailmemoire.db'
         
     DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     WTF_CSRF_ENABLED = True
