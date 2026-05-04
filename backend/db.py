@@ -163,6 +163,7 @@ def init_db(app):
         
         # En Postgres, on tente une initialisation silencieuse (les tables ont IF NOT EXISTS)
         elif db_type == 'postgres':
+            print(f"DEBUG: Attempting to connect to Postgres for Auto-Init...")
             try:
                 db = get_db()
                 with app.open_resource('database/schema.sql') as f:
@@ -175,7 +176,6 @@ def init_db(app):
                         'BOOLEAN DEFAULT 0': 'BOOLEAN DEFAULT FALSE',
                         'BOOLEAN DEFAULT 1': 'BOOLEAN DEFAULT TRUE',
                         'PRAGMA foreign_keys = ON;': '',
-                        # Gestion des booléens dans les inserts
                         ', 1)': ', TRUE)',
                         ', 0)': ', FALSE)'
                     }
@@ -186,16 +186,19 @@ def init_db(app):
                     statements = [s.strip() for s in schema_sql.split(';') if s.strip()]
                     
                     cur = db.conn.cursor()
+                    print(f"DEBUG: Executing {len(statements)} schema statements...")
                     for statement in statements:
                         try:
-                            # On ignore les erreurs sur les index qui existent déjà (si IF NOT EXISTS échoue)
                             cur.execute(statement)
                         except Exception as e:
                             if "already exists" not in str(e).lower():
                                 print(f"Warning during Postgres Init: {e}")
                     db.conn.commit()
+                    print("DEBUG: Postgres Auto-Init completed successfully.")
             except Exception as e:
-                print(f"Postgres Auto-Init Critical Error: {e}")
+                print(f"Postgres Auto-Init ERROR: {e}")
+                # On ne bloque pas le démarrage de l'app si possible
+                pass
 
     @app.cli.command('init-db')
     def init_db_command():
