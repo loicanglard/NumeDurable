@@ -8,23 +8,7 @@ T.R.A.I.L est une plateforme communautaire sobre permettant aux pratiquants trai
 
 ---
 
-## URL de déploiement
 
-> *À compléter après déploiement sur Render.com*
-
----
-
-## Membres de l'équipe
-
-| Nom | Rôle principal |
-|-----|---------------|
-| *Prénom NOM* | Back-end (auth, routes) |
-| *Prénom NOM* | Back-end (sentiers, rapports) |
-| *Prénom NOM* | Front-end (templates, CSS) |
-| *Prénom NOM* | BDD, déploiement, tests |
-| *Prénom NOM* | Documentation, Green IT |
-
----
 
 ## Stack technique
 
@@ -169,4 +153,6 @@ ci:    configuration GitHub Actions
 
 
 -------
-supabase - mdp : -H56MgJhB3ygM3B
+supabase - mdp : zzczeczdcxxcznlnc456
+
+
