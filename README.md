@@ -133,14 +133,6 @@ test:  ajout ou modification de tests
 ci:    configuration GitHub Actions
 ```
 
----
-
-## Rapport PDF
-
-> *Disponible dans `/docs/` après finalisation*
-
----
-
 ## Indicateurs Green IT visés
 
 | Indicateur | Objectif |
@@ -153,6 +145,5 @@ ci:    configuration GitHub Actions
 
 
 -------
-supabase - mdp : zzczeczdcxxcznlnc456
 
 
