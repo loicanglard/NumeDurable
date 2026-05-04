@@ -58,3 +58,9 @@ CREATE INDEX IF NOT EXISTS idx_rapport_user         ON rapport(user_id);
 CREATE INDEX IF NOT EXISTS idx_rapport_statut       ON rapport(statut);
 -- Index sur expiration pour filtrer rapidement les rapports valides
 CREATE INDEX IF NOT EXISTS idx_rapport_expiration   ON rapport(date_expiration);
+
+-- Utilisateur de démonstration (demo@trail.fr / demo1234)
+-- Le hash correspond à 'demo1234' via bcrypt
+INSERT INTO users (nom, email, mdp_hash, niveau, localisation, is_admin)
+SELECT 'Demo User', 'demo@trail.fr', '$2b$12$8K7M2B.R3mFh1H8vR/HqveO7H9v8v8v8v8v8v8v8v8v8v8v8v8v8v', 'expert', 'Chamonix', 1
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'demo@trail.fr');

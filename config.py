@@ -21,16 +21,18 @@ class Config:
             # Sur Vercel, SQLite ne peut écrire que dans /tmp
             DATABASE = '/tmp/trailmemoire.db'
         else:
-            # En local, on utilise le dossier database/
-            DATABASE = 'database/trailmemoire.db'
+            # En local, on utilise le dossier database/ de manière robuste (chemin absolu)
+            basedir = os.path.abspath(os.path.dirname(__file__))
+            DATABASE = os.path.join(basedir, 'database', 'trailmemoire.db')
         
     DEBUG = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
     WTF_CSRF_ENABLED = True
     
-    # Configuration des sessions - Optimisée pour le local (HTTP)
+    # Configuration des sessions
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
-    SESSION_COOKIE_SECURE = False  # False pour autoriser les sessions en HTTP local
+    # Important : True sur Vercel (HTTPS), False en local (HTTP)
+    SESSION_COOKIE_SECURE = True if IS_SERVERLESS else False
     SESSION_COOKIE_PATH = '/'
     PERMANENT_SESSION_LIFETIME = 3600 * 24 * 7
     REMEMBER_COOKIE_DURATION = 3600 * 24 * 7

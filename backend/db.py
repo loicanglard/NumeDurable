@@ -26,11 +26,34 @@ def get_db():
                     conn.executescript(f.read().decode('utf8'))
                     conn.close()
 
-        if db_type == 'postgres' and psycopg2:
-            conn = psycopg2.connect(db_url)
-            g.db = PostgresWrapper(conn)
-        else:
-            # SQLite par défaut
+        if db_type == 'postgres':
+            if psycopg2:
+                try:
+                    conn = psycopg2.connect(db_url)
+                    g.db = PostgresWrapper(conn)
+                    return g.db
+                except Exception as e:
+                    print(f"Error connecting to PostgreSQL: {e}")
+                    raise
+            else:
+                # Si on est en local et que psycopg2 manque, on pourrait vouloir basculer sur SQLite
+                # mais SURTOUT pas avec l'URL Postgres !
+                if db_url.startswith(('postgresql://', 'postgres://')):
+                    print("CRITICAL: DATABASE_URL is Postgres but 'psycopg2' is not installed.")
+                    print("Fallback to SQLite (local file) for development.")
+                    # Force local SQLite path for fallback
+                    basedir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+                    db_url = os.path.join(basedir, 'database', 'trailmemoire.db')
+                    db_type = 'sqlite'
+                else:
+                    raise ImportError("psycopg2 is required for PostgreSQL connections.")
+
+        if db_type == 'sqlite':
+            # On s'assure que le dossier existe
+            db_dir = os.path.dirname(db_url)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
+                
             conn = sqlite3.connect(
                 db_url,
                 detect_types=sqlite3.PARSE_DECLTYPES
@@ -40,8 +63,8 @@ def get_db():
                 conn.execute('PRAGMA foreign_keys = ON')
             except sqlite3.Error:
                 pass
-            # Utilisation d'un wrapper pour gérer la compatibilité 'user'/'users'
             g.db = SQLiteWrapper(conn)
+            
     return g.db
 
 class SQLiteWrapper:
