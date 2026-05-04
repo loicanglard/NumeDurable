@@ -11,3 +11,6 @@ class User(UserMixin):
         self.localisation = row['localisation']
         self.is_admin = bool(row['is_admin'])
         self.date_inscription = row['date_inscription']
+
+    def get_id(self):
+        return str(self.id)

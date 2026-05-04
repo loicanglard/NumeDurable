@@ -1,12 +1,11 @@
 import os
 from datetime import datetime
-from flask import Flask, render_template, render_template_string, flash, redirect, request
+from flask import Flask, render_template, flash, redirect, request
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 
 def create_app():
     # Détermination du projet root de manière robuste
-    # Ce fichier est dans backend/, donc le root est le parent.
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     app = Flask(
@@ -18,13 +17,6 @@ def create_app():
     
     # Chargement de la config
     app.config.from_object('config.Config')
-    
-    # Sécurité supplémentaire pour la SECRET_KEY sur Vercel
-    if not app.config.get('SECRET_KEY') or app.config.get('SECRET_KEY') == 'dev-secret-change-in-prod':
-        if os.environ.get('VERCEL'):
-            # En prod Vercel, on veut éviter de tourner avec la clé par défaut si possible
-            # Mais on ne bloque pas, on utilise ce qu'on a.
-            pass
 
     from backend.db import init_db, get_db
     
@@ -47,8 +39,7 @@ def create_app():
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
-        import sys
-        flash(f"Session expirée ou erreur de sécurité. Veuillez réessayer. ({e.description})", 'erreur')
+        flash(f"Session expirée ou erreur de sécurité. Veuillez réessayer.", 'erreur')
         return redirect(request.url)
 
     @login_manager.user_loader
@@ -57,21 +48,13 @@ def create_app():
             return None
         try:
             db = get_db()
-            # On utilise 'users' car c'est le nouveau standard du projet compatible Postgres/SQLite
-            row = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+            row = db.execute('SELECT * FROM "user" WHERE id = ?', (user_id,)).fetchone()
             if row:
                 return User(row)
         except Exception:
-            # Fallback vers 'user' si 'users' n'existe pas encore dans la BDD locale
-            try:
-                row = db.execute('SELECT * FROM "user" WHERE id = ?', (user_id,)).fetchone()
-                if row:
-                    return User(row)
-            except Exception:
-                pass
+            pass
         return None
 
-    # Error logging global pour debugger les 500 sur Vercel
     @app.errorhandler(500)
     def internal_error(error):
         import traceback
@@ -79,23 +62,7 @@ def create_app():
         tb = traceback.format_exc()
         print("--- TRACEBACK 500 ---", file=sys.stderr)
         print(tb, file=sys.stderr)
-        
-        template = """
-        {% extends "base.html" %}
-        {% block contenu %}
-        <div class="card mt-4">
-            <h1 style="color: var(--status-red);">Oups ! Une erreur interne est survenue.</h1>
-            <p class="text-soft mt-1">Détails de l'erreur pour le debug :</p>
-            <pre style="background: #111; color: #ff5555; padding: 1rem; border-radius: 5px; overflow-x: auto; font-family: monospace; font-size: 0.85rem; margin-top: 1rem;">
-{{ traceback }}
-            </pre>
-            <div class="mt-2">
-                <a href="/" class="btn btn-primary">Retour à l'accueil</a>
-            </div>
-        </div>
-        {% endblock %}
-        """
-        return render_template_string(template, traceback=tb), 500
+        return render_template('500.html', traceback=tb), 500
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
@@ -111,13 +78,12 @@ def create_app():
                        ROUND((julianday('now') - julianday(r.date_rapport)) * 24) as heures
                 FROM rapport r
                 JOIN sentier s ON r.sentier_id = s.id
-                JOIN users u ON r.user_id = u.id
+                JOIN "user" u ON r.user_id = u.id
                 WHERE r.date_expiration > datetime('now')
                 ORDER BY r.date_rapport DESC
                 LIMIT 5
             ''').fetchall()
         except Exception:
-            # Si la base n'est pas encore prête ou vide
             rapports = []
 
         rapports_recents = []

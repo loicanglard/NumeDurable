@@ -43,7 +43,7 @@ def inscription():
         try:
             import sys
             print("DEBUG: Checking existing email", file=sys.stderr)
-            existant = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+            existant = db.execute('SELECT id FROM "user" WHERE email = ?', (email,)).fetchone()
             if existant:
                 flash('Cet email est déjà utilisé.', 'erreur')
                 return render_template('auth/inscription.html',
@@ -54,7 +54,7 @@ def inscription():
             
             print("DEBUG: Executing INSERT", file=sys.stderr)
             cur = db.execute(
-                'INSERT INTO users (nom, email, mdp_hash, niveau, localisation, date_inscription) VALUES (?, ?, ?, ?, ?, ?)',
+                'INSERT INTO "user" (nom, email, mdp_hash, niveau, localisation, date_inscription) VALUES (?, ?, ?, ?, ?, ?)',
                 (nom, email, mdp_hash, niveau, localisation or None, datetime.utcnow())
             )
             print("DEBUG: Committing", file=sys.stderr)
@@ -62,7 +62,7 @@ def inscription():
             
             print(f"DEBUG: Auto-login for ID {cur.lastrowid}", file=sys.stderr)
             # Connexion automatique après inscription
-            user_row = db.execute('SELECT * FROM users WHERE id = ?', (cur.lastrowid,)).fetchone()
+            user_row = db.execute('SELECT * FROM "user" WHERE id = ?', (cur.lastrowid,)).fetchone()
             if user_row:
                 user = User(user_row)
                 login_user(user)
@@ -106,7 +106,7 @@ def connexion():
         mdp = request.form.get('mdp', '')
 
         db = get_db()
-        row = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        row = db.execute('SELECT * FROM "user" WHERE email = ?', (email,)).fetchone()
 
         if row and bcrypt.checkpw(mdp.encode('utf-8'), row['mdp_hash'].encode('utf-8')):
             user = User(row)

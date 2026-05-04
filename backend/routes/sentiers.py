@@ -53,14 +53,14 @@ def index():
 @sentiers_bp.route('/<int:id>')
 def detail(id):
     db = get_db()
-    sentier = db.execute('SELECT s.*, u.nom as auteur_nom FROM sentier s JOIN users u ON s.user_id = u.id WHERE s.id = ?', (id,)).fetchone()
+    sentier = db.execute('SELECT s.*, u.nom as auteur_nom FROM sentier s JOIN "user" u ON s.user_id = u.id WHERE s.id = ?', (id,)).fetchone()
     if not sentier:
         flash('Sentier introuvable.', 'erreur')
         return redirect(url_for('sentiers.index'))
 
     rapports = db.execute('''
         SELECT r.*, u.nom as user_nom FROM rapport r
-        JOIN user u ON r.user_id = u.id
+        JOIN "user" u ON r.user_id = u.id
         WHERE r.sentier_id = ?
         ORDER BY r.date_rapport DESC LIMIT 20
     ''', (id,)).fetchall()

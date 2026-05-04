@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block titre %}Erreur 500 - T.R.A.I.L{% endblock %}
+
+{% block contenu %}
+<div class="card mt-4">
+    <h1 style="color: var(--status-red);">Oups ! Une erreur interne est survenue.</h1>
+    <p class="text-soft mt-1">L'application a rencontré un problème imprévu.</p>
+    
+    {% if traceback %}
+    <div class="mt-2">
+        <p class="text-small text-bold">Détails techniques (Debug) :</p>
+        <pre style="background: #111; color: #ff5555; padding: 1rem; border-radius: 5px; overflow-x: auto; font-family: monospace; font-size: 0.85rem; margin-top: 0.5rem; border: 1px solid #333;">
+{{ traceback }}
+        </pre>
+    </div>
+    {% endif %}
+
+    <div class="mt-2">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">Retour à l'accueil</a>
+    </div>
+</div>
+{% endblock %}
