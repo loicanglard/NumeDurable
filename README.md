@@ -6,6 +6,12 @@ T.R.A.I.L est une plateforme communautaire sobre permettant aux pratiquants trai
 
 > Projet réalisé dans le cadre du cours **TI616 — Numérique Durable** (EFREI Paris, 2025-2026).
 
+Les membres de l'équipe sont : 
+Danthine Mathieu
+Anglard Loïc
+Cao Lilian
+Chollet Maelle
+Batard-Plaza Esteban
 ---
 
 
@@ -57,15 +63,6 @@ flask --app app run
 ```
 
 Le site est accessible sur `http://127.0.0.1:5000`.
--------
-
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-
-
-puis :
-python app.py
-
----
 
 ## Structure du dépôt
 
