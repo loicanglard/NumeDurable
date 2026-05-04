@@ -167,17 +167,35 @@ def init_db(app):
                 db = get_db()
                 with app.open_resource('database/schema.sql') as f:
                     schema_sql = f.read().decode('utf8')
-                    # Traduction à la volée du schéma SQLite vers Postgres
-                    schema_sql = schema_sql.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
-                    schema_sql = schema_sql.replace('DATETIME', 'TIMESTAMP')
-                    schema_sql = schema_sql.replace('BOOLEAN DEFAULT 0', 'BOOLEAN DEFAULT FALSE')
-                    schema_sql = schema_sql.replace('PRAGMA foreign_keys = ON;', '')
+                    
+                    # Traduction robuste SQLite -> Postgres
+                    replacements = {
+                        'INTEGER PRIMARY KEY AUTOINCREMENT': 'SERIAL PRIMARY KEY',
+                        'DATETIME': 'TIMESTAMP',
+                        'BOOLEAN DEFAULT 0': 'BOOLEAN DEFAULT FALSE',
+                        'BOOLEAN DEFAULT 1': 'BOOLEAN DEFAULT TRUE',
+                        'PRAGMA foreign_keys = ON;': '',
+                        # Gestion des booléens dans les inserts
+                        ', 1)': ', TRUE)',
+                        ', 0)': ', FALSE)'
+                    }
+                    for old, new in replacements.items():
+                        schema_sql = schema_sql.replace(old, new)
+                    
+                    # Nettoyage des commentaires et split par point-virgule
+                    statements = [s.strip() for s in schema_sql.split(';') if s.strip()]
                     
                     cur = db.conn.cursor()
-                    cur.execute(schema_sql)
+                    for statement in statements:
+                        try:
+                            # On ignore les erreurs sur les index qui existent déjà (si IF NOT EXISTS échoue)
+                            cur.execute(statement)
+                        except Exception as e:
+                            if "already exists" not in str(e).lower():
+                                print(f"Warning during Postgres Init: {e}")
                     db.conn.commit()
             except Exception as e:
-                print(f"Postgres Auto-Init Error: {e}")
+                print(f"Postgres Auto-Init Critical Error: {e}")
 
     @app.cli.command('init-db')
     def init_db_command():
