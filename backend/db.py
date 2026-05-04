@@ -186,14 +186,15 @@ def init_db(app):
                     statements = [s.strip() for s in schema_sql.split(';') if s.strip()]
                     
                     cur = db.conn.cursor()
-                    print(f"DEBUG: Executing {len(statements)} schema statements...")
+                    print(f"DEBUG: Executing {len(statements)} schema statements individually...")
                     for statement in statements:
                         try:
                             cur.execute(statement)
+                            db.conn.commit()
                         except Exception as e:
-                            if "already exists" not in str(e).lower():
-                                print(f"Warning during Postgres Init: {e}")
-                    db.conn.commit()
+                            db.conn.rollback()
+                            if "already exists" not in str(e).lower() and "déjà" not in str(e).lower():
+                                print(f"Note during Postgres Init: {e}")
                     print("DEBUG: Postgres Auto-Init completed successfully.")
             except Exception as e:
                 print(f"Postgres Auto-Init ERROR: {e}")
