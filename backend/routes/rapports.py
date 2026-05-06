@@ -1,6 +1,5 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
-from backend.db import get_db
 from datetime import datetime, timedelta
 import logging
 
@@ -17,8 +16,11 @@ OBSTACLES_POSSIBLES = OBSTACLES
 @login_required
 def nouveau():
     sentier_id = request.args.get('sentier_id', type=int)
-    db = get_db()
-    sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (sentier_id,)).fetchone() if sentier_id else None
+    supabase = current_app.supabase
+    sentier = None
+    if sentier_id and supabase:
+        sresp = supabase.table('sentier').select('*').eq('id', sentier_id).execute()
+        sentier = sresp.data[0] if (sresp.data and len(sresp.data) > 0) else None
 
     if request.method == 'POST':
         sentier_id = request.form.get('sentier_id', type=int)
@@ -38,17 +40,37 @@ def nouveau():
             return redirect(request.referrer or url_for('sentiers.index'))
 
         now = datetime.utcnow()
-        date_expiration = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-        db.execute(
-            'INSERT INTO rapport (user_id, sentier_id, statut, type_pratique, obstacles, commentaire, date_expiration, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-            (current_user.id, sentier_id, statut, type_pratique, obstacles or None, commentaire or None, date_expiration, now, now)
-        )
-        db.commit()
+        date_expiration = now + timedelta(days=7)
+        if supabase:
+            payload = {
+                'user_id': current_user.id,
+                'sentier_id': sentier_id,
+                'statut': statut,
+                'type_pratique': type_pratique,
+                'obstacles': obstacles or None,
+                'commentaire': commentaire or None,
+                'date_expiration': date_expiration.isoformat(),
+                'created_at': now.isoformat(),
+                'updated_at': now.isoformat()
+            }
+            supabase.table('rapport').insert(payload).execute()
+        else:
+            db = get_db()
+            db.execute(
+                'INSERT INTO rapport (user_id, sentier_id, statut, type_pratique, obstacles, commentaire, date_expiration, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (current_user.id, sentier_id, statut, type_pratique, obstacles or None, commentaire or None, date_expiration, now, now)
+            )
+            db.commit()
         logger.info(f"Rapport créé par user {current_user.id} pour sentier {sentier_id}")
         flash('Rapport déposé ! Valide 7 jours.', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=sentier_id))
 
-    sentiers = db.execute('SELECT id, nom, region FROM sentier ORDER BY nom').fetchall()
+    if supabase:
+        sresp = supabase.table('sentier').select('id, nom, region').order('nom', desc=False).execute()
+        sentiers = sresp.data or []
+    else:
+        db = get_db()
+        sentiers = db.execute('SELECT id, nom, region FROM sentier ORDER BY nom').fetchall()
     return render_template('rapports/form.html', sentier=sentier, sentiers=sentiers,
                            statuts=STATUTS, types_pratique=TYPES_PRATIQUE,
                            obstacles_possibles=OBSTACLES_POSSIBLES, mode='nouveau')
@@ -57,8 +79,13 @@ def nouveau():
 @rapports_bp.route('/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
 def modifier(id):
-    db = get_db()
-    rapport = db.execute('SELECT * FROM rapport WHERE id = ?', (id,)).fetchone()
+    supabase = current_app.supabase
+    if supabase:
+        rresp = supabase.table('rapport').select('*').eq('id', id).execute()
+        rapport = rresp.data[0] if (rresp.data and len(rresp.data) > 0) else None
+    else:
+        db = get_db()
+        rapport = db.execute('SELECT * FROM rapport WHERE id = %s', (id,)).fetchone()
     if not rapport:
         flash('Rapport introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
@@ -72,15 +99,28 @@ def modifier(id):
         obstacles = ','.join(request.form.getlist('obstacles'))
         commentaire = request.form.get('commentaire', '').strip()
 
-        db.execute(
-            'UPDATE rapport SET statut=?, type_pratique=?, obstacles=?, commentaire=?, updated_at=? WHERE id=?',
-            (statut, type_pratique, obstacles or None, commentaire or None, datetime.utcnow(), id)
-        )
-        db.commit()
+        if supabase:
+            supabase.table('rapport').update({
+                'statut': statut,
+                'type_pratique': type_pratique,
+                'obstacles': obstacles or None,
+                'commentaire': commentaire or None,
+                'updated_at': datetime.utcnow().isoformat()
+            }).eq('id', id).execute()
+        else:
+            db.execute(
+                'UPDATE rapport SET statut=%s, type_pratique=%s, obstacles=%s, commentaire=%s, updated_at=%s WHERE id=%s',
+                (statut, type_pratique, obstacles or None, commentaire or None, datetime.utcnow(), id)
+            )
+            db.commit()
         flash('Rapport modifié.', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=rapport['sentier_id']))
 
-    sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (rapport['sentier_id'],)).fetchone()
+    if supabase:
+        sresp = supabase.table('sentier').select('*').eq('id', rapport['sentier_id']).execute()
+        sentier = sresp.data[0] if (sresp.data and len(sresp.data) > 0) else None
+    else:
+        sentier = db.execute('SELECT * FROM sentier WHERE id = %s', (rapport['sentier_id'],)).fetchone()
     obstacles_actifs = rapport['obstacles'].split(',') if rapport['obstacles'] else []
     return render_template('rapports/form.html', rapport=rapport, sentier=sentier,
                            statuts=STATUTS, types_pratique=TYPES_PRATIQUE,
@@ -91,8 +131,13 @@ def modifier(id):
 @rapports_bp.route('/<int:id>/supprimer', methods=['POST'])
 @login_required
 def supprimer(id):
-    db = get_db()
-    rapport = db.execute('SELECT * FROM rapport WHERE id = ?', (id,)).fetchone()
+    supabase = current_app.supabase
+    if supabase:
+        rresp = supabase.table('rapport').select('*').eq('id', id).execute()
+        rapport = rresp.data[0] if (rresp.data and len(rresp.data) > 0) else None
+    else:
+        db = get_db()
+        rapport = db.execute('SELECT * FROM rapport WHERE id = %s', (id,)).fetchone()
     if not rapport:
         flash('Rapport introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
@@ -101,7 +146,10 @@ def supprimer(id):
         return redirect(url_for('sentiers.detail', id=rapport['sentier_id']))
 
     sentier_id = rapport['sentier_id']
-    db.execute('DELETE FROM rapport WHERE id = ?', (id,))
-    db.commit()
+    if supabase:
+        supabase.table('rapport').delete().eq('id', id).execute()
+    else:
+        db.execute('DELETE FROM rapport WHERE id = %s', (id,))
+        db.commit()
     flash('Rapport supprimé.', FLASH_SUCCESS)
     return redirect(url_for('sentiers.detail', id=sentier_id))

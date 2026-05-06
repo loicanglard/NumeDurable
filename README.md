@@ -39,6 +39,7 @@ T.R.A.I.L est une plateforme communautaire pour trail runners, VTTistes et rando
 | **CSS** | Natif (variables, flexbox) | < 10 Ko minifié, polices système uniquement |
 | **JS** | Vanilla (< 30 lignes) | Uniquement pour confirmations, pas de dépendances |
 | **Déploiement** | Render.com | Gratuit + CI/CD GitHub auto, hébergement sobre |
+| **Base données** | Supabase | PostgreSQL en production |
 
 **Philosophie** : Chaque choix prioritize la sobriété numérique (empreinte carbone faible, pages ultra-légères).
 
@@ -78,6 +79,25 @@ flask --app app run
 ```
 
 Le site est accessible sur `http://127.0.0.1:5000`.
+
+### Production avec Supabase
+
+Pour déployer avec une base PostgreSQL sur Supabase :
+
+```bash
+# 1. Créer un compte Supabase et récupérer la connection string
+# 2. Configurer .env avec :
+#    DB_TYPE=postgresql
+#    DATABASE_URL=postgresql://...@db.xxxxx.supabase.co:...
+# 3. Initialiser le schéma :
+DB_TYPE=postgresql flask --app app init-db
+```
+
+⚠️ **Guide complet** : Voir [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
+
+---
+
+## Structure du dépôt
 
 ## Structure du dépôt
 

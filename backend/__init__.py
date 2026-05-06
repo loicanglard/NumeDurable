@@ -46,6 +46,17 @@ def create_app():
     app.logger.setLevel(logging.INFO)
 
     from backend.db import init_db, get_db
+    # Initialize Supabase client if credentials present
+    try:
+        from supabase import create_client
+        supabase_url = app.config.get('SUPABASE_URL')
+        supabase_key = app.config.get('SUPABASE_KEY')
+        if supabase_url and supabase_key:
+            app.supabase = create_client(supabase_url, supabase_key)
+        else:
+            app.supabase = None
+    except Exception:
+        app.supabase = None
     
     csrf = CSRFProtect(app)
     init_db(app)
@@ -87,10 +98,17 @@ def create_app():
         if not user_id:
             return None
         try:
-            db = get_db()
-            row = db.execute('SELECT * FROM "user" WHERE id = ?', (user_id,)).fetchone()
-            if row:
-                return User(row)
+            supabase = app.supabase
+            if supabase:
+                resp = supabase.table('user').select('*').eq('id', int(user_id)).execute()
+                rows = resp.data or []
+                if rows:
+                    return User(rows[0])
+            else:
+                db = get_db()
+                row = db.execute('SELECT * FROM "user" WHERE id = %s', (user_id,)).fetchone()
+                if row:
+                    return User(row)
         except Exception as e:
             app.logger.warning(f"Failed to load user {user_id}: {e}")
         return None
@@ -119,23 +137,74 @@ def create_app():
         stats = {'sentiers_count': 0, 'users_count': 0, 'rapports_actifs_count': 0}
         
         try:
-            db = get_db()
-            rapports = db.execute('''
-                SELECT r.*, s.nom as sentier_nom, s.region, u.nom as user_nom,
-                       ROUND((julianday('now') - julianday(r.date_rapport)) * 24) as heures
-                FROM rapport r
-                JOIN sentier s ON r.sentier_id = s.id
-                JOIN "user" u ON r.user_id = u.id
-                WHERE r.date_expiration > datetime('now')
-                ORDER BY r.date_rapport DESC
-                LIMIT 5
-            ''').fetchall()
-            stats = db.execute('''
-                SELECT
-                    (SELECT COUNT(*) FROM sentier) AS sentiers_count,
-                    (SELECT COUNT(*) FROM "user") AS users_count,
-                    (SELECT COUNT(*) FROM rapport WHERE date_expiration > datetime('now')) AS rapports_actifs_count
-            ''').fetchone()
+            supabase = app.supabase
+            if supabase:
+                now = datetime.utcnow().isoformat()
+                rapports_resp = supabase.table('rapport').select('*').gt('date_expiration', now).order('date_rapport', desc=True).limit(5).execute()
+                rapports = rapports_resp.data or []
+                # Batch fetch related sentiers and users
+                sentier_ids = sorted({r.get('sentier_id') for r in rapports if r.get('sentier_id')})
+                user_ids = sorted({r.get('user_id') for r in rapports if r.get('user_id')})
+                sentiers_map = {}
+                users_map = {}
+                if sentier_ids:
+                    sresp = supabase.table('sentier').select('id, nom, region').in_('id', sentier_ids).execute()
+                    for s in (sresp.data or []):
+                        sentiers_map[s['id']] = s
+                if user_ids:
+                    uresp = supabase.table('user').select('id, nom').in_('id', user_ids).execute()
+                    for u in (uresp.data or []):
+                        users_map[u['id']] = u
+
+                # Annotate rapports with heures and related names
+                ann = []
+                for r in rapports:
+                    # compute heures approximated from date_rapport
+                    heures = 0
+                    try:
+                        dt_str = r.get('date_rapport')
+                        if dt_str:
+                            # handle possible Z suffix
+                            dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+                            heures = round((datetime.utcnow() - dt).total_seconds() / 3600)
+                        else:
+                            heures = 0
+                    except Exception:
+                        heures = 0
+                    r['heures'] = heures
+                    s = sentiers_map.get(r.get('sentier_id'))
+                    u = users_map.get(r.get('user_id'))
+                    if s:
+                        r['sentier_nom'] = s.get('nom')
+                        r['region'] = s.get('region')
+                    if u:
+                        r['user_nom'] = u.get('nom')
+                    ann.append(r)
+                rapports = ann
+
+                # Stats via count
+                s_count = supabase.table('sentier').select('id', count='exact').execute().count or 0
+                u_count = supabase.table('user').select('id', count='exact').execute().count or 0
+                r_count = supabase.table('rapport').select('id', count='exact').gt('date_expiration', now).execute().count or 0
+                stats = {'sentiers_count': s_count, 'users_count': u_count, 'rapports_actifs_count': r_count}
+            else:
+                db = get_db()
+                rapports = db.execute('''
+                    SELECT r.*, s.nom as sentier_nom, s.region, u.nom as user_nom,
+                           ROUND(EXTRACT(EPOCH FROM (NOW() - r.date_rapport))/3600) as heures
+                    FROM rapport r
+                    JOIN sentier s ON r.sentier_id = s.id
+                    JOIN "user" u ON r.user_id = u.id
+                    WHERE r.date_expiration > NOW()
+                    ORDER BY r.date_rapport DESC
+                    LIMIT 5
+                ''').fetchall()
+                stats = db.execute('''
+                    SELECT
+                        (SELECT COUNT(*) FROM sentier) AS sentiers_count,
+                        (SELECT COUNT(*) FROM "user") AS users_count,
+                        (SELECT COUNT(*) FROM rapport WHERE date_expiration > NOW()) AS rapports_actifs_count
+                ''').fetchone()
         except Exception as e:
             app.logger.error(f"Error loading homepage data: {e}")
             # Return empty data but don't fail the page

@@ -6,3 +6,4 @@ python-dotenv>=1.0.0
 psycopg2-binary==2.9.9
 flask-limiter==2.8.0
 gunicorn==21.2.0
+supabase>=2.0.0

@@ -1,43 +1,88 @@
-import sqlite3
 import os
 import click
 import bcrypt
 from datetime import datetime, timedelta
 from flask import current_app, g
 
+import psycopg2
+import psycopg2.extras
 
-def _has_column(db, table_name, column_name):
-    rows = db.execute(f'PRAGMA table_info("{table_name}")').fetchall()
-    return any(row['name'] == column_name for row in rows)
+
+class PGCursorWrapper:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
+class PGConnectionWrapper:
+    """Thin wrapper around psycopg2 connection providing a convenience
+    `execute(sql, params)` which returns a cursor-like object with
+    `fetchone()` / `fetchall()` similar to the previous sqlite API.
+    """
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, cursor_factory=psycopg2.extras.RealDictCursor, **kwargs)
+
+    def execute(self, sql, params=None):
+        if params is None:
+            params = ()
+        # allow existing code to use '?' placeholders -> convert to %s
+        sql_pg = sql.replace('?', '%s')
+        cur = self.cursor()
+        cur.execute(sql_pg, params)
+        return PGCursorWrapper(cur)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        try:
+            return self._conn.close()
+        except Exception:
+            pass
 
 
 def _ensure_audit_columns(db):
-    """Crée les colonnes d'audit (created_at, updated_at) si absentes.
-    
-    Effectue une migration progressive : crée les colonnes, puis migre
-    les données depuis les anciennes colonnes de date (date_inscription,
-    date_ajout, date_rapport) pour garantir la continuité des données.
+    """Ensure `created_at` and `updated_at` exist on core tables and try
+    to migrate legacy date columns if present. PostgreSQL-only.
     """
-    # Mapping table -> (audit_columns, source_column_for_legacy_data)
     table_mappings = {
         'user': (('created_at', 'updated_at'), 'date_inscription'),
         'sentier': (('created_at', 'updated_at'), 'date_ajout'),
         'rapport': (('created_at', 'updated_at'), 'date_rapport'),
     }
-    
+
     for table_name, (columns, legacy_column) in table_mappings.items():
-        # Ajouter les colonnes d'audit si manquantes
         for column_name in columns:
-            if not _has_column(db, table_name, column_name):
-                db.execute(f'ALTER TABLE "{table_name}" ADD COLUMN {column_name} DATETIME')
-        
-        # Migrer les données depuis les anciennes colonnes
-        db.execute(f'''
-            UPDATE "{table_name}"
-            SET created_at = COALESCE(created_at, {legacy_column}),
-                updated_at = COALESCE(updated_at, {legacy_column})
-            WHERE created_at IS NULL OR updated_at IS NULL
-        ''')
+            try:
+                db.execute(f'ALTER TABLE "{table_name}" ADD COLUMN {column_name} TIMESTAMP')
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        try:
+            db.execute(f'''
+                UPDATE "{table_name}"
+                SET created_at = COALESCE(created_at, "{legacy_column}"),
+                    updated_at = COALESCE(updated_at, "{legacy_column}")
+                WHERE created_at IS NULL OR updated_at IS NULL
+            ''')
+            db.commit()
+        except Exception:
+            db.rollback()
 
 
 def _format_dt(value):
@@ -45,154 +90,168 @@ def _format_dt(value):
 
 
 def _seed_demo_data(db):
-    """Insère des données de démonstration pour faciliter les tests.
-    
-    À utiliser uniquement en développement local. Ces données incluent :
-    - 3 utilisateurs avec différents niveaux (débutant, intermédiaire, expert)
-    - 6 sentiers variés (différentes régions, difficultés)
-    - 8 rapports récents simulant l'activité
-    
-    Les données sont cohérentes : rapports avec des dates échelonnées
-    pour montrer l'expiration après 7 jours.
-    """
+    """Seed demo data (PostgreSQL-only)."""
     now = datetime.utcnow()
 
     users = [
-        (1, 'Alice Martin', 'alice@trail.fr', 'alice1234', 'expert', 'Chamonix', 1),
-        (2, 'Nadia Laurent', 'nadia@trail.fr', 'nadia1234', 'intermédiaire', 'Grenoble', 0),
-        (3, 'Marc Dubois', 'marc@trail.fr', 'marc1234', 'débutant', 'Annecy', 0),
+        ('Alice Martin', 'alice@trail.fr', 'alice1234', 'expert', 'Chamonix', True),
+        ('Nadia Laurent', 'nadia@trail.fr', 'nadia1234', 'intermédiaire', 'Grenoble', False),
+        ('Marc Dubois', 'marc@trail.fr', 'marc1234', 'débutant', 'Annecy', False),
     ]
 
     sentiers = [
-        (1, 'Tour du Lac Blanc', 'Haute-Savoie', 11.8, 890, 'moyen', 'trail,rando', 'Alpin', 'Juin à Octobre', 'Boucle panoramique très fréquentée.', 1),
-        (2, 'Crêtes de la Chartreuse', 'Isère', 18.4, 1260, 'difficile', 'trail,rando', 'Montagnard', 'Mai à Octobre', 'Crêtes exposées avec belles vues.', 2),
-        (3, 'Forêt de Fontainebleau', 'Seine-et-Marne', 9.6, 180, 'facile', 'trail,vtt,rando', 'Forestier', 'Toute saison', 'Idéal pour les sorties courtes.', 3),
-        (4, 'Belvédère des Aigles', 'Savoie', 14.2, 980, 'difficile', 'trail', 'Rocailleux', 'Juin à Septembre', 'Sentier technique avec passages engagés.', 1),
-        (5, 'Lac des Miroirs', 'Hautes-Alpes', 7.5, 420, 'facile', 'rando', 'Alpin doux', 'Juin à Novembre', 'Promenade familiale autour du lac.', 2),
-        (6, 'Traversée des Balcons', 'Drôme', 22.1, 1450, 'expert', 'trail,rando', 'Mixte', 'Juillet à Octobre', 'Longue traversée pour coureurs expérimentés.', 3),
+        ('Tour du Lac Blanc', 'Haute-Savoie', 11.8, 890, 'moyen', 'trail,rando', 'Alpin', 'Juin à Octobre', 'Boucle panoramique très fréquentée.', 1),
+        ('Crêtes de la Chartreuse', 'Isère', 18.4, 1260, 'difficile', 'trail,rando', 'Montagnard', 'Mai à Octobre', 'Crêtes exposées avec belles vues.', 2),
+        ('Forêt de Fontainebleau', 'Seine-et-Marne', 9.6, 180, 'facile', 'trail,vtt,rando', 'Forestier', 'Toute saison', 'Idéal pour les sorties courtes.', 3),
+        ('Belvédère des Aigles', 'Savoie', 14.2, 980, 'difficile', 'trail', 'Rocailleux', 'Juin à Septembre', 'Sentier technique avec passages engagés.', 1),
+        ('Lac des Miroirs', 'Hautes-Alpes', 7.5, 420, 'facile', 'rando', 'Alpin doux', 'Juin à Novembre', 'Promenade familiale autour du lac.', 2),
+        ('Traversée des Balcons', 'Drôme', 22.1, 1450, 'expert', 'trail,rando', 'Mixte', 'Juillet à Octobre', 'Longue traversée pour coureurs expérimentés.', 3),
     ]
 
     rapports = [
-        (1, 1, 1, 'praticable', 'trail', 'sec,propre', 'Très bon état, quelques portions humides au lever du jour.', 0),
-        (2, 2, 2, 'partiel', 'trail', 'boue,vent', 'Quelques zones boueuses sur les portions ombragées.', 1),
-        (3, 3, 3, 'praticable', 'vtt', 'sec', 'Parcours roulant et agréable, parfait en VTT.', 2),
-        (4, 1, 4, 'ferme', 'trail', 'arbre_tombe', 'Un arbre est tombé après la tempête, accès barré.', 0),
-        (5, 2, 5, 'praticable', 'rando', 'sec', 'Vue dégagée, aucune difficulté particulière.', 1),
-        (6, 3, 6, 'partiel', 'trail', 'neige,verglas', 'Neige persistante sur les crêtes, prudence nécessaire.', 2),
-        (7, 1, 2, 'praticable', 'rando', 'sec', 'Sentier propre, balisage OK.', 3),
-        (8, 2, 1, 'partiel', 'trail', 'boue', 'Terrain gras sur les 3 derniers kilomètres.', 4),
+        (1, 1, 'praticable', 'trail', 'sec,propre', 'Très bon état, quelques portions humides au lever du jour.', 0),
+        (2, 2, 'partiel', 'trail', 'boue,vent', 'Quelques zones boueuses sur les portions ombragées.', 1),
+        (3, 3, 'praticable', 'vtt', 'sec', 'Parcours roulant et agréable, parfait en VTT.', 2),
+        (1, 4, 'ferme', 'trail', 'arbre_tombe', 'Un arbre est tombé après la tempête, accès barré.', 0),
+        (2, 5, 'praticable', 'rando', 'sec', 'Vue dégagée, aucune difficulté particulière.', 1),
+        (3, 6, 'partiel', 'trail', 'neige,verglas', 'Neige persistante sur les crêtes, prudence nécessaire.', 2),
+        (1, 2, 'praticable', 'rando', 'sec', 'Sentier propre, balisage OK.', 3),
+        (2, 1, 'partiel', 'trail', 'boue', 'Terrain gras sur les 3 derniers kilomètres.', 4),
     ]
 
-    for user_id, nom, email, password, niveau, localisation, is_admin in users:
-        created_at = now - timedelta(days=user_id * 9)
-        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        db.execute(
-            'INSERT INTO "user" (id, nom, email, mdp_hash, niveau, localisation, is_admin, date_inscription, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (user_id, nom, email, password_hash, niveau, localisation, is_admin, _format_dt(created_at), _format_dt(created_at), _format_dt(created_at))
-        )
+    try:
+        # Insert users
+        for nom, email, password, niveau, localisation, is_admin in users:
+            created_at = now
+            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            db.execute(
+                'INSERT INTO "user" (nom, email, mdp_hash, niveau, localisation, is_admin, date_inscription, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (nom, email, password_hash, niveau, localisation, is_admin, _format_dt(created_at), _format_dt(created_at), _format_dt(created_at))
+            )
 
-    for sentier_id, nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id in sentiers:
-        created_at = now - timedelta(days=sentier_id * 3)
-        db.execute(
-            'INSERT INTO sentier (id, nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, date_ajout, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (sentier_id, nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, _format_dt(created_at), _format_dt(created_at), _format_dt(created_at))
-        )
+        # Insert sentiers
+        for nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id in sentiers:
+            created_at = now
+            db.execute(
+                'INSERT INTO sentier (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, date_ajout, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, _format_dt(created_at), _format_dt(created_at), _format_dt(created_at))
+            )
 
-    for rapport_id, user_id, sentier_id, statut, type_pratique, obstacles, commentaire, age_days in rapports:
-        date_rapport = now - timedelta(days=age_days, hours=rapport_id * 2)
-        date_expiration = date_rapport + timedelta(days=7)
-        db.execute(
-            'INSERT INTO rapport (id, user_id, sentier_id, date_rapport, date_expiration, statut, type_pratique, obstacles, commentaire, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (rapport_id, user_id, sentier_id, _format_dt(date_rapport), _format_dt(date_expiration), statut, type_pratique, obstacles, commentaire, _format_dt(date_rapport), _format_dt(date_rapport))
-        )
+        # Insert rapports
+        for user_id, sentier_id, statut, type_pratique, obstacles, commentaire, age_days in rapports:
+            date_rapport = now - timedelta(days=age_days)
+            date_expiration = date_rapport + timedelta(days=7)
+            db.execute(
+                'INSERT INTO rapport (user_id, sentier_id, date_rapport, date_expiration, statut, type_pratique, obstacles, commentaire, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (user_id, sentier_id, _format_dt(date_rapport), _format_dt(date_expiration), statut, type_pratique, obstacles, commentaire, _format_dt(date_rapport), _format_dt(date_rapport))
+            )
+
+        db.commit()
+    except Exception as e:
+        current_app.logger.exception(f'Seed data error: {e}')
+        db.rollback()
+        raise
+
 
 def get_db():
+    """Return a PostgreSQL connection wrapper stored on `g`.
+
+    Expects `current_app.config['DATABASE']` to contain the full
+    connection URL (e.g. Supabase `DATABASE_URL`).
+    """
     if 'db' not in g:
         db_url = current_app.config['DATABASE']
-        
-        # S'assurer que le dossier existe
-        db_dir = os.path.dirname(db_url)
-        if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
-            
-        conn = sqlite3.connect(
-            db_url,
-            detect_types=sqlite3.PARSE_DECLTYPES
-        )
-        conn.row_factory = sqlite3.Row
         try:
-            conn.execute('PRAGMA foreign_keys = ON')
-        except sqlite3.Error:
-            pass
-        g.db = conn
+            # Try a short connect timeout and require SSL (Supabase needs SSL).
+            conn = psycopg2.connect(db_url, connect_timeout=10, sslmode='require')
+        except Exception as e:
+            # Provide a clearer message for common connectivity issues.
+            current_app.logger.exception(f'Database connection failed: {e}')
+            hint = (
+                'Unable to connect to the PostgreSQL host.\n'
+                '- Check that your INTERNET and network allow outbound TCP port 5432.\n'
+                '- If you are behind a firewall, VPN, or proxy, try disabling it temporarily.\n'
+                '- Ensure the `DATABASE_URL` in your .env is correct and includes `?sslmode=require` if needed.\n'
+                "- From this machine try: `psql '<DATABASE_URL>'` or `telnet <host> 5432` to verify connectivity."
+            )
+            raise RuntimeError(f'Database connection failed: {e}\n{hint}') from e
+
+        g.db = PGConnectionWrapper(conn)
     return g.db
+
 
 def close_db(e=None):
     db = g.pop('db', None)
     if db is not None:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
+
 
 def init_db(app):
+    """Register teardown and CLI commands (PostgreSQL-only)."""
     app.teardown_appcontext(close_db)
-    
-    with app.app_context():
-        db_path = app.config.get('DATABASE')
-        if db_path and (not os.path.exists(db_path) or os.path.getsize(db_path) == 0):
-            try:
-                db = get_db()
-                with app.open_resource('database/schema.sql') as f:
-                    db.executescript(f.read().decode('utf8'))
-                _ensure_audit_columns(db)
-                db.commit()
-            except Exception as e:
-                current_app.logger.exception('SQLite Init Error')
 
     @app.cli.command('init-db')
     def init_db_command():
+        """Initialize PostgreSQL schema from `database/schema_postgresql.sql`."""
         db = get_db()
-        with current_app.open_resource('database/schema.sql') as f:
-            db.executescript(f.read().decode('utf8'))
-        click.echo('Base de données initialisée.')
+        try:
+            with current_app.open_resource('database/schema_postgresql.sql') as f:
+                sql = f.read().decode('utf8')
+                cur = db.cursor()
+                cur.execute(sql)
+                db.commit()
+            click.echo('PostgreSQL schema initialized.')
+        except Exception as e:
+            current_app.logger.exception(f'Init DB Error: {e}')
+            click.echo(f'Error: {e}', err=True)
 
     @app.cli.command('reset-db')
     def reset_db_command():
+        """Drop tables and recreate schema."""
         db = get_db()
-        db.execute('PRAGMA foreign_keys = OFF')
-        tables = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
-        for table in tables:
-            db.execute(f'DROP TABLE IF EXISTS {table["name"]}')
-        db.execute('PRAGMA foreign_keys = ON')
-        
-        with current_app.open_resource('database/schema.sql') as f:
-            db.executescript(f.read().decode('utf8'))
-        click.echo('Base de données réinitialisée.')
+        try:
+            cur = db.cursor()
+            cur.execute('''
+                DROP TABLE IF EXISTS rapport CASCADE;
+                DROP TABLE IF EXISTS sentier CASCADE;
+                DROP TABLE IF EXISTS "user" CASCADE;
+            ''')
+            db.commit()
+            with current_app.open_resource('database/schema_postgresql.sql') as f:
+                cur.execute(f.read().decode('utf8'))
+                db.commit()
+            click.echo('PostgreSQL database reset.')
+        except Exception as e:
+            current_app.logger.exception(f'Reset DB Error: {e}')
+            click.echo(f'Error: {e}', err=True)
 
     @app.cli.command('seed-db')
-    @click.option('--reset', is_flag=True, help="Vide d'abord les tables avant de réinsérer les données de test.")
+    @click.option('--reset', is_flag=True, help="Reset database before seeding.")
     def seed_db_command(reset):
         db = get_db()
-
-        existing = db.execute('SELECT COUNT(*) AS total FROM sentier').fetchone()['total']
-        if existing and not reset:
-            click.echo('La base contient déjà des données. Utilise --reset pour repartir de zéro.')
-            return
-
-        db.execute('PRAGMA foreign_keys = OFF')
-        db.execute('DELETE FROM rapport')
-        db.execute('DELETE FROM sentier')
-        db.execute('DELETE FROM "user"')
         try:
-            db.execute("DELETE FROM sqlite_sequence WHERE name IN ('rapport', 'sentier', 'user')")
-        except sqlite3.Error:
-            pass
-        db.execute('PRAGMA foreign_keys = ON')
+            cur = db.execute('SELECT COUNT(*) AS total FROM sentier')
+            existing = cur.fetchone()[0]
+            if existing and not reset:
+                click.echo('Database already contains data. Use --reset to clear first.')
+                return
 
-        _ensure_audit_columns(db)
-        _seed_demo_data(db)
-        db.commit()
+            cur = db.cursor()
+            cur.execute('DELETE FROM rapport')
+            cur.execute('DELETE FROM sentier')
+            cur.execute('DELETE FROM "user"')
+            db.commit()
 
-        click.echo('Base de données peuplée avec des données de test.')
-        click.echo('Comptes de test :')
-        click.echo(' - alice@trail.fr / alice1234')
-        click.echo(' - nadia@trail.fr / nadia1234')
-        click.echo(' - marc@trail.fr / marc1234')
+            _ensure_audit_columns(db)
+            _seed_demo_data(db)
+            click.echo('Database seeded with demo data.')
+            click.echo('Test accounts:')
+            click.echo(' - alice@trail.fr / alice1234')
+            click.echo(' - nadia@trail.fr / nadia1234')
+            click.echo(' - marc@trail.fr / marc1234')
+        except Exception as e:
+            current_app.logger.exception(f'Seed DB Error: {e}')
+            click.echo(f'Error: {e}', err=True)
