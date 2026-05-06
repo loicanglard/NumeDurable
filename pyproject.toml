@@ -19,6 +19,11 @@ dependencies = [
   "supabase>=2.0.0",
 ]
 
+
+[tool.setuptools.packages.find]
+include = ["backend", "backend.*"]
+exclude = ["database", "frontend"]
+
 [tool.black]
 line-length = 100
 target-version = ["py312"]
