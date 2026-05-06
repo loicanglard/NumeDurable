@@ -1,16 +1,16 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
-from backend.db import get_db
 from datetime import datetime
 
 from backend.constants import DIFFICULTES, TYPES_PRATIQUE, FLASH_ERROR, FLASH_SUCCESS
+from backend.supabase_utils import user_table
 from backend.validators import validate_sentier_form
 sentiers_bp = Blueprint('sentiers', __name__, url_prefix='/sentiers')
 
 
 @sentiers_bp.route('/')
 def index():
-    db = get_db()
+    supabase = current_app.supabase
     region = request.args.get('region', '').strip()
     difficulte = request.args.get('difficulte', '').strip()
     page = max(1, int(request.args.get('page', 1)))
@@ -18,18 +18,24 @@ def index():
 
     where, params = [], []
     if region:
-        where.append('region LIKE ?')
+        where.append('region ILIKE %s')
         params.append(f'%{region}%')
     if difficulte and difficulte in DIFFICULTES:
-        where.append('difficulte = ?')
+        where.append('difficulte = %s')
         params.append(difficulte)
 
-    clause = ('WHERE ' + ' AND '.join(where)) if where else ''
-    total = db.execute(f'SELECT COUNT(*) FROM sentier {clause}', params).fetchone()[0]
-    sentiers = db.execute(
-        f'SELECT * FROM sentier {clause} ORDER BY date_ajout DESC LIMIT ? OFFSET ?',
-        params + [par_page, (page - 1) * par_page]
-    ).fetchall()
+    # Build supabase query with filters
+    query = supabase.table('sentier').select('*')
+    if region:
+        query = query.filter('region', 'ilike', f'%{region}%')
+    if difficulte and difficulte in DIFFICULTES:
+        query = query.eq('difficulte', difficulte)
+    # Total count (compat with supabase client versions without `count=` kwarg)
+    total_resp = query.select('id').execute()
+    total = len(total_resp.data or [])
+    # Pagination
+    sentiers_resp = query.order('date_ajout', desc=True).limit(par_page).offset((page - 1) * par_page).execute()
+    sentiers = sentiers_resp.data or []
 
     # TODO: Optimiser avec pagination côté DB (LIMIT 0, 10) dès que effectif > 500 sentiers
     # Actuellement performant, mais devient lent avec beaucoup de données
@@ -39,26 +45,21 @@ def index():
     # pour chaque sentier, en une requête optimisée. On utilise une sous-requête
     # pour récupérer les MAX dates, puis on join pour éviter les GROUP BY dupliqués.
     dernier_rapport = {}
+    # Fetch latest valid report status per displayed sentier (client-side aggregation)
+    dernier_rapport = {}
     if sentiers:
         sentier_ids = [s['id'] for s in sentiers]
-        placeholders = ','.join(['?'] * len(sentier_ids))
-        rows = db.execute(f'''
-            SELECT r.sentier_id, r.statut
-            FROM rapport r
-            JOIN (
-                SELECT sentier_id, MAX(date_rapport) AS max_date
-                FROM rapport
-                WHERE date_expiration > datetime('now')
-                  AND sentier_id IN ({placeholders})
-                GROUP BY sentier_id
-            ) latest
-              ON latest.sentier_id = r.sentier_id
-             AND latest.max_date = r.date_rapport
-            WHERE r.date_expiration > datetime('now')
-        ''', sentier_ids).fetchall()
-        dernier_rapport = {row['sentier_id']: row['statut'] for row in rows}
+        rapports_resp = supabase.table('rapport').select('*').in_('sentier_id', sentier_ids).gt('date_expiration', datetime.utcnow().isoformat()).order('date_rapport', desc=True).execute()
+        rows = rapports_resp.data or []
+        seen = set()
+        for r in rows:
+            sid = r.get('sentier_id')
+            if sid not in seen:
+                dernier_rapport[sid] = r.get('statut')
+                seen.add(sid)
 
-    regions = [r[0] for r in db.execute('SELECT DISTINCT region FROM sentier ORDER BY region').fetchall()]
+    regions_resp = supabase.table('sentier').select('region').execute()
+    regions = sorted({r.get('region') for r in (regions_resp.data or []) if r.get('region')})
 
     return render_template('sentiers/index.html',
                            sentiers=sentiers, dernier_rapport=dernier_rapport,
@@ -69,18 +70,33 @@ def index():
 
 @sentiers_bp.route('/<int:id>')
 def detail(id):
-    db = get_db()
-    sentier = db.execute('SELECT s.*, u.nom as auteur_nom FROM sentier s JOIN "user" u ON s.user_id = u.id WHERE s.id = ?', (id,)).fetchone()
+    supabase = current_app.supabase
+    # Fetch sentier (author resolved separately to avoid PostgREST relation name issues).
+    sentier_resp = supabase.table('sentier').select('*').eq('id', id).execute()
+    sentiers = sentier_resp.data or []
+    sentier = sentiers[0] if sentiers else None
     if not sentier:
         flash('Sentier introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
 
-    rapports = db.execute('''
-        SELECT r.*, u.nom as user_nom FROM rapport r
-        JOIN "user" u ON r.user_id = u.id
-        WHERE r.sentier_id = ?
-        ORDER BY r.date_rapport DESC LIMIT 20
-    ''', (id,)).fetchall()
+    auteur_nom = None
+    auteur_id = sentier.get('user_id')
+    if auteur_id:
+        auteur_resp = user_table(supabase).select('id, nom').eq('id', auteur_id).limit(1).execute()
+        if auteur_resp.data:
+            auteur_nom = auteur_resp.data[0].get('nom')
+    sentier['auteur_nom'] = auteur_nom
+
+    # Fetch rapports and attach user_nom
+    rapports_resp = supabase.table('rapport').select('*').eq('sentier_id', id).order('date_rapport', desc=True).limit(20).execute()
+    rapports = rapports_resp.data or []
+    # Attach user names for rapports (batch fetch unique users)
+    user_ids = sorted({r.get('user_id') for r in rapports if r.get('user_id')})
+    if user_ids:
+        users_resp = user_table(supabase).select('id, nom').in_('id', user_ids).execute()
+        users_map = {u['id']: u['nom'] for u in (users_resp.data or [])}
+        for r in rapports:
+            r['user_nom'] = users_map.get(r.get('user_id'))
 
     return render_template('sentiers/detail.html', sentier=sentier, rapports=rapports)
 
@@ -114,17 +130,27 @@ def nouveau():
             for e in erreurs: flash(e, FLASH_ERROR)
             return render_template('sentiers/form.html', difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='nouveau')
 
-        db = get_db()
+        supabase = current_app.supabase
         now = datetime.utcnow()
         distance_km_float = float(distance_km)
         denivele_pos_int = int(denivele_pos)
-        cur = db.execute(
-            'INSERT INTO sentier (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-            (nom, region, distance_km_float, denivele_pos_int, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, current_user.id, now, now)
-        )
-        db.commit()
+        insert_payload = {
+            'nom': nom,
+            'region': region,
+            'distance_km': distance_km_float,
+            'denivele_pos': denivele_pos_int,
+            'difficulte': difficulte,
+            'types_pratique': types_pratique,
+            'terrain': terrain or None,
+            'saison_recommandee': saison_recommandee or None,
+            'description': description or None,
+            'user_id': current_user.id,
+            'date_ajout': now.isoformat(),
+        }
+        resp = supabase.table('sentier').insert(insert_payload).select('id').execute()
+        new_id = resp.data[0]['id'] if (resp.data and len(resp.data) > 0) else None
         flash('Sentier ajouté avec succès !', FLASH_SUCCESS)
-        return redirect(url_for('sentiers.detail', id=cur.lastrowid))
+        return redirect(url_for('sentiers.detail', id=new_id))
 
     return render_template('sentiers/form.html', difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='nouveau')
 
@@ -132,8 +158,9 @@ def nouveau():
 @sentiers_bp.route('/<int:id>/modifier', methods=['GET', 'POST'])
 @login_required
 def modifier(id):
-    db = get_db()
-    sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (id,)).fetchone()
+    supabase = current_app.supabase
+    sentier_resp = supabase.table('sentier').select('*').eq('id', id).execute()
+    sentier = sentier_resp.data[0] if (sentier_resp.data and len(sentier_resp.data) > 0) else None
     if not sentier:
         flash('Sentier introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
@@ -168,11 +195,17 @@ def modifier(id):
             for e in erreurs: flash(e, FLASH_ERROR)
             return render_template('sentiers/form.html', sentier=sentier, difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='modifier')
 
-        db.execute(
-            'UPDATE sentier SET nom=?, region=?, distance_km=?, denivele_pos=?, difficulte=?, types_pratique=?, terrain=?, saison_recommandee=?, description=?, updated_at=? WHERE id=?',
-            (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, datetime.utcnow(), id)
-        )
-        db.commit()
+        supabase.table('sentier').update({
+            'nom': nom,
+            'region': region,
+            'distance_km': distance_km,
+            'denivele_pos': denivele_pos,
+            'difficulte': difficulte,
+            'types_pratique': types_pratique,
+            'terrain': terrain or None,
+            'saison_recommandee': saison_recommandee or None,
+            'description': description or None,
+        }).eq('id', id).execute()
         flash('Sentier modifié.', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=id))
 
@@ -182,8 +215,9 @@ def modifier(id):
 @sentiers_bp.route('/<int:id>/supprimer', methods=['POST'])
 @login_required
 def supprimer(id):
-    db = get_db()
-    sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (id,)).fetchone()
+    supabase = current_app.supabase
+    sentier_resp = supabase.table('sentier').select('*').eq('id', id).execute()
+    sentier = sentier_resp.data[0] if (sentier_resp.data and len(sentier_resp.data) > 0) else None
     if not sentier:
         flash('Sentier introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
@@ -191,7 +225,6 @@ def supprimer(id):
         flash('Non autorisé.', FLASH_ERROR)
         return redirect(url_for('sentiers.detail', id=id))
 
-    db.execute('DELETE FROM sentier WHERE id = ?', (id,))
-    db.commit()
+    supabase.table('sentier').delete().eq('id', id).execute()
     flash('Sentier supprimé.', FLASH_SUCCESS)
     return redirect(url_for('sentiers.index'))

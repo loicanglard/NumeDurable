@@ -57,6 +57,37 @@
             <span class="text-small text-soft">v1.1</span>
         </div>
     </div>
+    <div class="container greenit-panel" id="greenit-panel" aria-live="polite">
+        <div class="greenit-head">
+            <h3 class="greenit-title">Encart Green IT</h3>
+            <span class="mono-label">Mesures locales navigateur</span>
+        </div>
+        <div class="greenit-grid">
+            <div class="greenit-item">
+                <span class="greenit-label">Poids total transfere</span>
+                <strong id="gi-weight" class="greenit-value">--</strong>
+            </div>
+            <div class="greenit-item">
+                <span class="greenit-label">Temps de chargement</span>
+                <strong id="gi-load" class="greenit-value">--</strong>
+            </div>
+            <div class="greenit-item">
+                <span class="greenit-label">Requetes HTTP</span>
+                <strong id="gi-requests" class="greenit-value">--</strong>
+            </div>
+            <div class="greenit-item">
+                <span class="greenit-label">Ressources en cache</span>
+                <strong id="gi-cache" class="greenit-value">--</strong>
+            </div>
+            <div class="greenit-item">
+                <span class="greenit-label">Empreinte CO2 estimee</span>
+                <strong id="gi-co2" class="greenit-value">--</strong>
+            </div> 
+        </div>
+        <p class="greenit-note text-soft text-small" id="gi-note">
+            Estimation indicative basee sur les API Performance et le volume transfere.
+        </p>
+    </div>
 </footer>
 
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>

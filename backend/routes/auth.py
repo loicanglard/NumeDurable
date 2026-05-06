@@ -5,6 +5,7 @@ from datetime import datetime
 from backend.db import get_db
 from backend.models import User
 from backend.constants import FLASH_SUCCESS, FLASH_ERROR, FLASH_INFO, get_limiter
+from backend.supabase_utils import user_table
 from backend.validators import validate_user_signup
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -41,41 +42,67 @@ def inscription():
             return render_template('auth/inscription.html',
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)
 
-        db = get_db()
+        supabase = current_app.supabase
         try:
-            existant = db.execute('SELECT id FROM "user" WHERE email = ?', (email,)).fetchone()
-            if existant:
-                flash('Cet email est déjà utilisé.', FLASH_ERROR)
-                return render_template('auth/inscription.html',
-                                       nom=nom, email=email, niveau=niveau, localisation=localisation)
+            if supabase:
+                exist_resp = user_table(supabase).select('id').eq('email', email).execute()
+                if exist_resp.data:
+                    flash('Cet email est déjà utilisé.', FLASH_ERROR)
+                    return render_template('auth/inscription.html', nom=nom, email=email, niveau=niveau, localisation=localisation)
 
-            mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                now = datetime.utcnow()
+                payload = {
+                    'nom': nom,
+                    'email': email,
+                    'mdp_hash': mdp_hash,
+                    'niveau': niveau,
+                    'localisation': localisation or None,
+                    'date_inscription': now.isoformat(),
+                }
+                ins = user_table(supabase).insert(payload).select('id').execute()
+                user_id = ins.data[0]['id'] if (ins.data and len(ins.data) > 0) else None
+                if user_id:
+                    user_resp = user_table(supabase).select('*').eq('id', user_id).execute()
+                    if user_resp.data:
+                        user = User(user_resp.data[0])
+                        login_user(user)
+                        flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', FLASH_SUCCESS)
+                        return redirect(url_for('sentiers.index'))
+                flash('Compte créé ! Veuillez vous connecter.', FLASH_SUCCESS)
+                return redirect(url_for('auth.connexion'))
+            else:
+                db = get_db()
+                existant = db.execute('SELECT id FROM "user" WHERE email = %s', (email,)).fetchone()
+                if existant:
+                    flash('Cet email est déjà utilisé.', FLASH_ERROR)
+                    return render_template('auth/inscription.html', nom=nom, email=email, niveau=niveau, localisation=localisation)
 
-            now = datetime.utcnow()
-            cur = db.execute(
-                'INSERT INTO "user" (nom, email, mdp_hash, niveau, localisation, date_inscription, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                (nom, email, mdp_hash, niveau, localisation or None, now, now, now)
-            )
-            db.commit()
+                mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                now = datetime.utcnow()
+                cur = db.execute(
+                    'INSERT INTO "user" (nom, email, mdp_hash, niveau, localisation, date_inscription, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id',
+                    (nom, email, mdp_hash, niveau, localisation or None, now, now, now)
+                ).fetchone()
+                db.commit()
 
-            # Connexion automatique après inscription
-            user_row = db.execute('SELECT * FROM "user" WHERE id = ?', (cur.lastrowid,)).fetchone()
-            if user_row:
-                user = User(user_row)
-                login_user(user)
-                flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', FLASH_SUCCESS)
-                return redirect(url_for('sentiers.index'))
-
-            flash('Compte créé ! Veuillez vous connecter.', FLASH_SUCCESS)
-            return redirect(url_for('auth.connexion'))
-
+                user_row = db.execute('SELECT * FROM "user" WHERE id = %s', (cur['id'],)).fetchone()
+                if user_row:
+                    user = User(user_row)
+                    login_user(user)
+                    flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', FLASH_SUCCESS)
+                    return redirect(url_for('sentiers.index'))
+                flash('Compte créé ! Veuillez vous connecter.', FLASH_SUCCESS)
+                return redirect(url_for('auth.connexion'))
         except Exception:
-            if db:
-                db.rollback()
+            if not supabase:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             current_app.logger.exception("Erreur lors de l'inscription")
             flash('Erreur lors de l\'inscription. Veuillez réessayer plus tard.', FLASH_ERROR)
-            return render_template('auth/inscription.html',
-                                   nom=nom, email=email, niveau=niveau, localisation=localisation)
+            return render_template('auth/inscription.html', nom=nom, email=email, niveau=niveau, localisation=localisation)
 
     return render_template('auth/inscription.html')
 
@@ -99,8 +126,14 @@ def connexion():
         email = request.form.get('email', '').strip().lower()
         mdp = request.form.get('mdp', '')
 
-        db = get_db()
-        row = db.execute('SELECT * FROM "user" WHERE email = ?', (email,)).fetchone()
+        supabase = current_app.supabase
+        row = None
+        if supabase:
+            resp = user_table(supabase).select('*').eq('email', email).execute()
+            row = resp.data[0] if (resp.data and len(resp.data) > 0) else None
+        else:
+            db = get_db()
+            row = db.execute('SELECT * FROM "user" WHERE email = %s', (email,)).fetchone()
 
         if row and bcrypt.checkpw(mdp.encode('utf-8'), row['mdp_hash'].encode('utf-8')):
             user = User(row)
