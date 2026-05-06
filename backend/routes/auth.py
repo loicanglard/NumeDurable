@@ -1,14 +1,16 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 import bcrypt
 from datetime import datetime
 from backend.db import get_db
 from backend.models import User
+from backend import limiter
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 
 @auth_bp.route('/inscription', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
 def inscription():
     if current_user.is_authenticated:
         return redirect(url_for('sentiers.index'))
@@ -41,46 +43,37 @@ def inscription():
 
         db = get_db()
         try:
-            import sys
-            print("DEBUG: Checking existing email", file=sys.stderr)
             existant = db.execute('SELECT id FROM "user" WHERE email = ?', (email,)).fetchone()
             if existant:
                 flash('Cet email est déjà utilisé.', 'erreur')
                 return render_template('auth/inscription.html',
                                        nom=nom, email=email, niveau=niveau, localisation=localisation)
 
-            print("DEBUG: Hashing password", file=sys.stderr)
             mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            
-            print("DEBUG: Executing INSERT", file=sys.stderr)
+
+            now = datetime.utcnow()
             cur = db.execute(
-                'INSERT INTO "user" (nom, email, mdp_hash, niveau, localisation, date_inscription) VALUES (?, ?, ?, ?, ?, ?)',
-                (nom, email, mdp_hash, niveau, localisation or None, datetime.utcnow())
+                'INSERT INTO "user" (nom, email, mdp_hash, niveau, localisation, date_inscription, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (nom, email, mdp_hash, niveau, localisation or None, now, now, now)
             )
-            print("DEBUG: Committing", file=sys.stderr)
             db.commit()
-            
-            print(f"DEBUG: Auto-login for ID {cur.lastrowid}", file=sys.stderr)
+
             # Connexion automatique après inscription
             user_row = db.execute('SELECT * FROM "user" WHERE id = ?', (cur.lastrowid,)).fetchone()
             if user_row:
                 user = User(user_row)
                 login_user(user)
-                print(f"DEBUG: Login success for {user.nom}", file=sys.stderr)
                 flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', 'succes')
                 return redirect(url_for('sentiers.index'))
-            
-            print("DEBUG: Fallback to connexion page", file=sys.stderr)
+
             flash('Compte créé ! Veuillez vous connecter.', 'succes')
             return redirect(url_for('auth.connexion'))
-            
-        except Exception as e:
-            if db: db.rollback()
-            import sys
-            import traceback
-            print(f"CRASH INSCRIPTION: {str(e)}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            flash(f"Erreur lors de l'inscription : {str(e)}", 'erreur')
+
+        except Exception:
+            if db:
+                db.rollback()
+            current_app.logger.exception("Erreur lors de l'inscription")
+            flash('Erreur lors de l\'inscription. Veuillez réessayer plus tard.', 'erreur')
             return render_template('auth/inscription.html',
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)
 
@@ -97,6 +90,7 @@ def is_safe_url(target):
 
 
 @auth_bp.route('/connexion', methods=['GET', 'POST'])
+@limiter.limit("10 per minute")
 def connexion():
     if current_user.is_authenticated:
         return redirect(url_for('sentiers.index'))

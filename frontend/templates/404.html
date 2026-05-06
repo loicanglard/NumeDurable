@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block titre %}Page introuvable - T.R.A.I.L{% endblock %}
+
+{% block contenu %}
+<div class="card mt-4">
+    <h1>Page introuvable</h1>
+    <p class="text-soft mt-1">La ressource demandée n'existe pas ou a été déplacée.</p>
+    <div class="mt-2">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">Retour à l'accueil</a>
+        <a href="{{ url_for('sentiers.index') }}" class="btn btn-ghost">Voir les sentiers</a>
+    </div>
+</div>
+{% endblock %}

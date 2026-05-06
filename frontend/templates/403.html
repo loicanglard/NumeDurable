@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block titre %}Accès refusé - T.R.A.I.L{% endblock %}
+
+{% block contenu %}
+<div class="card mt-4">
+    <h1>Accès refusé</h1>
+    <p class="text-soft mt-1">Vous n'avez pas les permissions nécessaires pour accéder à cette ressource.</p>
+    <div class="mt-2">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">Retour à l'accueil</a>
+    </div>
+</div>
+{% endblock %}

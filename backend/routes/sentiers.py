@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from backend.db import get_db
+from datetime import datetime
 
 sentiers_bp = Blueprint('sentiers', __name__, url_prefix='/sentiers')
 
@@ -31,15 +32,26 @@ def index():
         params + [par_page, (page - 1) * par_page]
     ).fetchall()
 
-    # Dernier rapport valide par sentier
+    # Dernier rapport valide pour tous les sentiers affichés en une seule requête.
     dernier_rapport = {}
-    for s in sentiers:
-        r = db.execute('''
-            SELECT statut FROM rapport
-            WHERE sentier_id = ? AND date_expiration > datetime('now')
-            ORDER BY date_rapport DESC LIMIT 1
-        ''', (s['id'],)).fetchone()
-        dernier_rapport[s['id']] = r['statut'] if r else None
+    if sentiers:
+        sentier_ids = [s['id'] for s in sentiers]
+        placeholders = ','.join(['?'] * len(sentier_ids))
+        rows = db.execute(f'''
+            SELECT r.sentier_id, r.statut
+            FROM rapport r
+            JOIN (
+                SELECT sentier_id, MAX(date_rapport) AS max_date
+                FROM rapport
+                WHERE date_expiration > datetime('now')
+                  AND sentier_id IN ({placeholders})
+                GROUP BY sentier_id
+            ) latest
+              ON latest.sentier_id = r.sentier_id
+             AND latest.max_date = r.date_rapport
+            WHERE r.date_expiration > datetime('now')
+        ''', sentier_ids).fetchall()
+        dernier_rapport = {row['sentier_id']: row['statut'] for row in rows}
 
     regions = [r[0] for r in db.execute('SELECT DISTINCT region FROM sentier ORDER BY region').fetchall()]
 
@@ -103,9 +115,10 @@ def nouveau():
             return render_template('sentiers/form.html', difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='nouveau')
 
         db = get_db()
+        now = datetime.utcnow()
         cur = db.execute(
-            'INSERT INTO sentier (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
-            (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, current_user.id)
+            'INSERT INTO sentier (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+            (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, current_user.id, now, now)
         )
         db.commit()
         flash('Sentier ajouté avec succès !', 'succes')
@@ -154,8 +167,8 @@ def modifier(id):
             return render_template('sentiers/form.html', sentier=sentier, difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='modifier')
 
         db.execute(
-            'UPDATE sentier SET nom=?, region=?, distance_km=?, denivele_pos=?, difficulte=?, types_pratique=?, terrain=?, saison_recommandee=?, description=? WHERE id=?',
-            (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, id)
+            'UPDATE sentier SET nom=?, region=?, distance_km=?, denivele_pos=?, difficulte=?, types_pratique=?, terrain=?, saison_recommandee=?, description=?, updated_at=? WHERE id=?',
+            (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, datetime.utcnow(), id)
         )
         db.commit()
         flash('Sentier modifié.', 'succes')

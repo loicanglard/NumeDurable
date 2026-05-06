@@ -1,153 +1,190 @@
-import os
-import re
 import sqlite3
+import os
+import click
+import bcrypt
+from datetime import datetime, timedelta
 from flask import current_app, g
 
 
-# SQL adapter : convertit la syntaxe SQLite → PostgreSQL à la volée
-
-def _adapt_sql(sql):
-    sql = sql.replace('?', '%s')
-    sql = re.sub(r"datetime\('now'\)", 'NOW()', sql, flags=re.IGNORECASE)
-    sql = re.sub(
-        r'ROUND\s*\(\s*\(julianday\s*\(\s*\'now\'\s*\)\s*-\s*julianday\s*\(([^)]+)\)\s*\)\s*\*\s*24\s*\)',
-        r'ROUND(EXTRACT(EPOCH FROM (NOW() - \1)) / 3600)',
-        sql, flags=re.IGNORECASE
-    )
-    return sql
+def _has_column(db, table_name, column_name):
+    rows = db.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    return any(row['name'] == column_name for row in rows)
 
 
-# Wrappers PostgreSQL (psycopg2) — mimiquent l'interface sqlite3
+def _ensure_audit_columns(db):
+    table_columns = {
+        'user': ('created_at', 'updated_at'),
+        'sentier': ('created_at', 'updated_at'),
+        'rapport': ('created_at', 'updated_at'),
+    }
+    for table_name, columns in table_columns.items():
+        for column_name in columns:
+            if not _has_column(db, table_name, column_name):
+                db.execute(f'ALTER TABLE "{table_name}" ADD COLUMN {column_name} DATETIME')
 
-class _PgRow(dict):
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return list(self.values())[key]
-        return super().__getitem__(key)
-
-
-class _PgCursor:
-    def __init__(self, raw_cursor, lastrowid=None):
-        self._cur = raw_cursor
-        self.lastrowid = lastrowid
-
-    def fetchone(self):
-        row = self._cur.fetchone()
-        return _PgRow(row) if row is not None else None
-
-    def fetchall(self):
-        return [_PgRow(r) for r in self._cur.fetchall()]
-
-    def __iter__(self):
-        return (_PgRow(r) for r in self._cur)
-
-    def __getitem__(self, key):
-        return self.fetchone()[key]
-
-
-class _PgConn:
-    def __init__(self, conn):
-        self._conn = conn
-
-    def execute(self, sql, params=()):
-        sql = _adapt_sql(sql)
-        is_insert = sql.strip().upper().startswith('INSERT')
-        if is_insert and 'RETURNING' not in sql.upper():
-            sql = sql.rstrip('; \n') + ' RETURNING id'
-
-        cur = self._conn.cursor()
-        cur.execute(sql, params if params else None)
-
-        lastrowid = None
-        if is_insert:
-            row = cur.fetchone()
-            lastrowid = _PgRow(row)['id'] if row else None
-
-        return _PgCursor(cur, lastrowid)
-
-    def executescript(self, script):
-        cur = self._conn.cursor()
-        for stmt in re.split(r';\s*\n', script):
-            stmt = stmt.strip()
-            if stmt and not stmt.startswith('--'):
-                try:
-                    cur.execute(stmt)
-                except Exception:
-                    pass
-        self._conn.commit()
-        cur.close()
-
-    def commit(self):
-        self._conn.commit()
-
-    def rollback(self):
-        self._conn.rollback()
-
-    def close(self):
-        self._conn.close()
+    db.execute('''
+        UPDATE "user"
+        SET created_at = COALESCE(created_at, date_inscription),
+            updated_at = COALESCE(updated_at, date_inscription)
+        WHERE created_at IS NULL OR updated_at IS NULL
+    ''')
+    db.execute('''
+        UPDATE sentier
+        SET created_at = COALESCE(created_at, date_ajout),
+            updated_at = COALESCE(updated_at, date_ajout)
+        WHERE created_at IS NULL OR updated_at IS NULL
+    ''')
+    db.execute('''
+        UPDATE rapport
+        SET created_at = COALESCE(created_at, date_rapport),
+            updated_at = COALESCE(updated_at, date_rapport)
+        WHERE created_at IS NULL OR updated_at IS NULL
+    ''')
 
 
-# API publique
+def _format_dt(value):
+    return value.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _seed_demo_data(db):
+    now = datetime.utcnow()
+
+    users = [
+        (1, 'Alice Martin', 'alice@trail.fr', 'alice1234', 'expert', 'Chamonix', 1),
+        (2, 'Nadia Laurent', 'nadia@trail.fr', 'nadia1234', 'intermédiaire', 'Grenoble', 0),
+        (3, 'Marc Dubois', 'marc@trail.fr', 'marc1234', 'débutant', 'Annecy', 0),
+    ]
+
+    sentiers = [
+        (1, 'Tour du Lac Blanc', 'Haute-Savoie', 11.8, 890, 'moyen', 'trail,rando', 'Alpin', 'Juin à Octobre', 'Boucle panoramique très fréquentée.', 1),
+        (2, 'Crêtes de la Chartreuse', 'Isère', 18.4, 1260, 'difficile', 'trail,rando', 'Montagnard', 'Mai à Octobre', 'Crêtes exposées avec belles vues.', 2),
+        (3, 'Forêt de Fontainebleau', 'Seine-et-Marne', 9.6, 180, 'facile', 'trail,vtt,rando', 'Forestier', 'Toute saison', 'Idéal pour les sorties courtes.', 3),
+        (4, 'Belvédère des Aigles', 'Savoie', 14.2, 980, 'difficile', 'trail', 'Rocailleux', 'Juin à Septembre', 'Sentier technique avec passages engagés.', 1),
+        (5, 'Lac des Miroirs', 'Hautes-Alpes', 7.5, 420, 'facile', 'rando', 'Alpin doux', 'Juin à Novembre', 'Promenade familiale autour du lac.', 2),
+        (6, 'Traversée des Balcons', 'Drôme', 22.1, 1450, 'expert', 'trail,rando', 'Mixte', 'Juillet à Octobre', 'Longue traversée pour coureurs expérimentés.', 3),
+    ]
+
+    rapports = [
+        (1, 1, 1, 'praticable', 'trail', 'sec,propre', 'Très bon état, quelques portions humides au lever du jour.', 0),
+        (2, 2, 2, 'partiel', 'trail', 'boue,vent', 'Quelques zones boueuses sur les portions ombragées.', 1),
+        (3, 3, 3, 'praticable', 'vtt', 'sec', 'Parcours roulant et agréable, parfait en VTT.', 2),
+        (4, 1, 4, 'ferme', 'trail', 'arbre_tombe', 'Un arbre est tombé après la tempête, accès barré.', 0),
+        (5, 2, 5, 'praticable', 'rando', 'sec', 'Vue dégagée, aucune difficulté particulière.', 1),
+        (6, 3, 6, 'partiel', 'trail', 'neige,verglas', 'Neige persistante sur les crêtes, prudence nécessaire.', 2),
+        (7, 1, 2, 'praticable', 'rando', 'sec', 'Sentier propre, balisage OK.', 3),
+        (8, 2, 1, 'partiel', 'trail', 'boue', 'Terrain gras sur les 3 derniers kilomètres.', 4),
+    ]
+
+    for user_id, nom, email, password, niveau, localisation, is_admin in users:
+        created_at = now - timedelta(days=user_id * 9)
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        db.execute(
+            'INSERT INTO "user" (id, nom, email, mdp_hash, niveau, localisation, is_admin, date_inscription, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (user_id, nom, email, password_hash, niveau, localisation, is_admin, _format_dt(created_at), _format_dt(created_at), _format_dt(created_at))
+        )
+
+    for sentier_id, nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id in sentiers:
+        created_at = now - timedelta(days=sentier_id * 3)
+        db.execute(
+            'INSERT INTO sentier (id, nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, date_ajout, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (sentier_id, nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, _format_dt(created_at), _format_dt(created_at), _format_dt(created_at))
+        )
+
+    for rapport_id, user_id, sentier_id, statut, type_pratique, obstacles, commentaire, age_days in rapports:
+        date_rapport = now - timedelta(days=age_days, hours=rapport_id * 2)
+        date_expiration = date_rapport + timedelta(days=7)
+        db.execute(
+            'INSERT INTO rapport (id, user_id, sentier_id, date_rapport, date_expiration, statut, type_pratique, obstacles, commentaire, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (rapport_id, user_id, sentier_id, _format_dt(date_rapport), _format_dt(date_expiration), statut, type_pratique, obstacles, commentaire, _format_dt(date_rapport), _format_dt(date_rapport))
+        )
 
 def get_db():
     if 'db' not in g:
-        database_url = current_app.config.get('DATABASE_URL')
-
-        if database_url:
-            import psycopg2
-            import psycopg2.extras
-            raw = psycopg2.connect(
-                database_url,
-                cursor_factory=psycopg2.extras.RealDictCursor,
-                connect_timeout=10,
-            )
-            g.db = _PgConn(raw)
-        else:
-            db_path = current_app.config['DATABASE']
-            db_dir = os.path.dirname(db_path)
-            if db_dir and not os.path.exists(db_dir):
-                os.makedirs(db_dir, exist_ok=True)
-            conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-            conn.row_factory = sqlite3.Row
-            try:
-                conn.execute('PRAGMA foreign_keys = ON')
-            except sqlite3.Error:
-                pass
-            g.db = conn
-
+        db_url = current_app.config['DATABASE']
+        
+        # S'assurer que le dossier existe
+        db_dir = os.path.dirname(db_url)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            
+        conn = sqlite3.connect(
+            db_url,
+            detect_types=sqlite3.PARSE_DECLTYPES
+        )
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute('PRAGMA foreign_keys = ON')
+        except sqlite3.Error:
+            pass
+        g.db = conn
     return g.db
-
 
 def close_db(e=None):
     db = g.pop('db', None)
     if db is not None:
         db.close()
 
-
 def init_db(app):
     app.teardown_appcontext(close_db)
-
+    
     with app.app_context():
-        database_url = app.config.get('DATABASE_URL')
+        db_path = app.config.get('DATABASE')
+        if db_path and (not os.path.exists(db_path) or os.path.getsize(db_path) == 0):
+            try:
+                db = get_db()
+                with app.open_resource('database/schema.sql') as f:
+                    db.executescript(f.read().decode('utf8'))
+                _ensure_audit_columns(db)
+                db.commit()
+            except Exception as e:
+                current_app.logger.exception('SQLite Init Error')
 
-        if database_url:
-            schema_pg = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                'database', 'schema_pg.sql'
-            )
-            if os.path.exists(schema_pg):
-                try:
-                    db = get_db()
-                    with open(schema_pg, encoding='utf-8') as f:
-                        db.executescript(f.read())
-                except Exception as e:
-                    print(f"PostgreSQL Init Error: {e}")
-        else:
-            db_path = app.config.get('DATABASE')
-            if db_path and (not os.path.exists(db_path) or os.path.getsize(db_path) == 0):
-                try:
-                    db = get_db()
-                    with app.open_resource('database/schema.sql') as f:
-                        db.executescript(f.read().decode('utf8'))
-                except Exception as e:
-                    print(f"SQLite Init Error: {e}")
+    @app.cli.command('init-db')
+    def init_db_command():
+        db = get_db()
+        with current_app.open_resource('database/schema.sql') as f:
+            db.executescript(f.read().decode('utf8'))
+        click.echo('Base de données initialisée.')
+
+    @app.cli.command('reset-db')
+    def reset_db_command():
+        db = get_db()
+        db.execute('PRAGMA foreign_keys = OFF')
+        tables = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
+        for table in tables:
+            db.execute(f'DROP TABLE IF EXISTS {table["name"]}')
+        db.execute('PRAGMA foreign_keys = ON')
+        
+        with current_app.open_resource('database/schema.sql') as f:
+            db.executescript(f.read().decode('utf8'))
+        click.echo('Base de données réinitialisée.')
+
+    @app.cli.command('seed-db')
+    @click.option('--reset', is_flag=True, help="Vide d'abord les tables avant de réinsérer les données de test.")
+    def seed_db_command(reset):
+        db = get_db()
+
+        existing = db.execute('SELECT COUNT(*) AS total FROM sentier').fetchone()['total']
+        if existing and not reset:
+            click.echo('La base contient déjà des données. Utilise --reset pour repartir de zéro.')
+            return
+
+        db.execute('PRAGMA foreign_keys = OFF')
+        db.execute('DELETE FROM rapport')
+        db.execute('DELETE FROM sentier')
+        db.execute('DELETE FROM "user"')
+        try:
+            db.execute("DELETE FROM sqlite_sequence WHERE name IN ('rapport', 'sentier', 'user')")
+        except sqlite3.Error:
+            pass
+        db.execute('PRAGMA foreign_keys = ON')
+
+        _ensure_audit_columns(db)
+        _seed_demo_data(db)
+        db.commit()
+
+        click.echo('Base de données peuplée avec des données de test.')
+        click.echo('Comptes de test :')
+        click.echo(' - alice@trail.fr / alice1234')
+        click.echo(' - nadia@trail.fr / nadia1234')
+        click.echo(' - marc@trail.fr / marc1234')

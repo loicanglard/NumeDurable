@@ -43,12 +43,13 @@ def profil_modifier():
         return redirect(url_for('users.profil'))
 
     if mdp:
+        now = datetime.utcnow()
         mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        db.execute('UPDATE "user" SET nom=?, niveau=?, localisation=?, mdp_hash=? WHERE id=?',
-                   (nom, niveau, localisation or None, mdp_hash, current_user.id))
+        db.execute('UPDATE "user" SET nom=?, niveau=?, localisation=?, mdp_hash=?, updated_at=? WHERE id=?',
+                   (nom, niveau, localisation or None, mdp_hash, now, current_user.id))
     else:
-        db.execute('UPDATE "user" SET nom=?, niveau=?, localisation=? WHERE id=?',
-                   (nom, niveau, localisation or None, current_user.id))
+        db.execute('UPDATE "user" SET nom=?, niveau=?, localisation=?, updated_at=? WHERE id=?',
+                   (nom, niveau, localisation or None, datetime.utcnow(), current_user.id))
     db.commit()
     flash('Profil mis à jour.', 'succes')
     return redirect(url_for('users.profil'))

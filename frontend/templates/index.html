@@ -2,94 +2,184 @@
 {% block titre %}T.R.A.I.L — Terrain Rando Alerte Info Live{% endblock %}
 
 {% block contenu %}
-<div class="hero section">
-    <h1>Vérifiez l'état des sentiers en un clin d'œil.</h1>
-    <p class="text-soft mt-1" style="font-size: 1.15rem; max-width: 600px; margin-left: auto; margin-right: auto;">
-        La plateforme communautaire pour partager et consulter les conditions réelles des parcours en montagne.
-    </p>
-    
-    <div class="mt-3" style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-        <a href="{{ url_for('sentiers.index') }}" class="btn btn-primary">Explorer les sentiers</a>
-        {% if not current_user.is_authenticated %}
-            <a href="{{ url_for('auth.inscription') }}" class="btn btn-secondary">Créer un compte</a>
+<section class="relative" style="padding: 5rem 0 5.5rem; overflow: hidden;">
+    <div class="deco-number" style="right: -2%; top: -4%;">01</div>
+    <div class="container relative hero">
+        <div class="flex between center mb-6" style="border-top: 1px solid var(--border); padding-top: 1rem; flex-wrap: wrap; gap: 1rem;">
+            <span class="mono-label">Edition ndeg 001</span>
+            <span class="mono-label">Info terrain en direct</span>
+        </div>
+
+        <span class="accent-bar"></span>
+
+        <h1 class="display" style="font-size: clamp(3.25rem, 9vw, 8rem); line-height: 0.9; max-width: 11ch;">
+            Ce sentier<br>
+            est-il <span class="accent">praticable</span><br>
+            <span class="serif">aujourd'hui ?</span>
+        </h1>
+
+        <div class="mt-4" style="display: grid; grid-template-columns: 1.35fr 1fr; gap: 2rem; align-items: end;">
+            <p style="font-size: 1.15rem; line-height: 1.7; max-width: 42rem; color: var(--foreground);">
+                T.R.A.I.L centralise les rapports réels déposés par la communauté. Les signalements sont datés, filtrables, et expirent automatiquement au bout de sept jours pour garder des informations fraîches.
+            </p>
+            <div class="col gap-4" style="justify-content: flex-end;">
+                <div class="flex gap-4" style="flex-wrap: wrap;">
+                    <a href="{{ url_for('sentiers.index') }}" class="btn btn-primary">Consulter les sentiers</a>
+                    <a href="{{ url_for('sentiers.index') }}" class="btn btn-secondary">Voir les rapports</a>
+                </div>
+                <div class="mono-meta" style="border-top: 1px solid var(--border); padding-top: 1rem;">
+                    Lecture libre · Inscription requise pour contribuer
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="ticker">
+    <div class="ticker-track mono-label" style="font-size: 11px;">
+        {% if rapports_recents %}
+            {% for repeat in range(2) %}
+                {% for r in rapports_recents %}
+                    <span style="display: inline-flex; align-items: center; gap: 0.9rem;">
+                        <span class="accent">●</span>
+                        <span style="color: var(--foreground);">{{ r.statut|upper }}</span>
+                        <span class="muted-text">{{ r.sentier_nom }}</span>
+                        <span style="color: var(--foreground);">{{ r.type_pratique }}</span>
+                        <span class="muted-text">{{ r.anciennete }}</span>
+                    </span>
+                {% endfor %}
+            {% endfor %}
         {% else %}
-            <a href="{{ url_for('sentiers.index') }}" class="btn btn-secondary">Consulter les rapports</a>
+            <span>Aucun rapport récent disponible pour le moment.</span>
         {% endif %}
     </div>
-</div>
+</section>
 
-<div class="section mt-4">
-    <h2 class="text-center">Comment ça marche ?</h2>
-    <div class="features-grid">
-        <div class="feature-item">
-            <span class="feature-icon">🔍</span>
-            <h3>1. Trouvez un sentier</h3>
-            <p class="text-small text-soft">Recherchez parmi des centaines de parcours par région ou difficulté.</p>
-        </div>
-        <div class="feature-item">
-            <span class="feature-icon">📊</span>
-            <h3>2. Vérifiez l'état</h3>
-            <p class="text-small text-soft">Consultez les derniers rapports déposés par les traileurs et randonneurs.</p>
-        </div>
-        <div class="feature-item">
-            <span class="feature-icon">✍️</span>
-            <h3>3. Partagez l'info</h3>
-            <p class="text-small text-soft">Revenu de sortie ? Signalez les obstacles ou les bonnes conditions.</p>
-        </div>
-    </div>
-</div>
-
-<div class="section mt-4" style="background: var(--bg-card); border-radius: var(--radius-lg); padding: var(--space-md); border: 1px solid var(--border);">
-    <div class="grid grid-3">
-        <div class="text-center">
-            <span class="text-bold" style="font-size: 1.5rem; color: var(--primary);">7 jours</span>
-            <p class="text-small text-soft">Fraîcheur des données garantie par expiration auto.</p>
-        </div>
-        <div class="text-center">
-            <span class="text-bold" style="font-size: 1.5rem; color: var(--primary);">Multi-pratiques</span>
-            <p class="text-small text-soft">Trail, VTT, Randonnée, Ski de rando...</p>
-        </div>
-        <div class="text-center">
-            <span class="text-bold" style="font-size: 1.5rem; color: var(--primary);">Green IT</span>
-            <p class="text-small text-soft">Interface légère, 0 tracker, respect de votre vie privée.</p>
-        </div>
-    </div>
-</div>
-
-<div class="section mt-4">
-    <div class="flex-between">
-        <h2>Signalements récents</h2>
-        <a href="{{ url_for('sentiers.index') }}" class="text-small text-bold" style="color: var(--primary);">Voir tout →</a>
-    </div>
-
-    {% if rapports_recents %}
-    <div class="grid grid-2 mt-2">
-        {% for r in rapports_recents %}
-        <article class="card card-hover">
-            <div class="flex-between mb-1">
-                <span class="status status-{{ r.statut }}">
-                    <span class="status-dot"></span>
-                    {% if r.statut == 'praticable' %}Praticable{% elif r.statut == 'partiel' %}Partiel{% else %}Fermé{% endif %}
-                </span>
-                <span class="text-small text-soft">il y a {{ r.anciennete }}</span>
+<section class="py-16 relative">
+    <div class="deco-number" style="left: -2%; top: 10%;">02</div>
+    <div class="container relative">
+        <div class="flex between mb-6" style="align-items: flex-end; flex-wrap: wrap; gap: 1.5rem;">
+            <div>
+                <span class="accent-bar" style="width: 48px;"></span>
+                <div class="mono-label mb-2">Section 02 — Live</div>
+                <h2 class="display" style="font-size: clamp(2.25rem, 6vw, 5.5rem);">
+                    Signalements<br><span class="serif accent">récents.</span>
+                </h2>
             </div>
-            <h3><a href="{{ url_for('sentiers.detail', id=r.sentier_id) }}">{{ r.sentier_nom }}</a></h3>
-            <p class="text-small text-soft">{{ r.region }} · par @{{ r.user_nom }}</p>
-            {% if r.commentaire %}
-                <p class="text-small mt-1" style="font-style: italic; color: var(--text-soft);">"{{ r.commentaire|truncate(80) }}"</p>
-            {% endif %}
-            <div class="mt-2">
-                <span class="badge">{{ r.type_pratique }}</span>
+            <div class="text-right">
+                <div class="mono-label">{{ stats.rapports_actifs_count }} rapports actifs</div>
+                <div class="mono-meta">expiration 7 jours</div>
             </div>
-        </article>
-        {% endfor %}
+        </div>
+
+        {% if rapports_recents %}
+            <div style="border-top: 1px solid var(--foreground);">
+                {% for r in rapports_recents %}
+                <a href="{{ url_for('sentiers.detail', id=r.sentier_id) }}" class="hover-card" style="display: block; border-bottom: 1px solid var(--border); padding: 1.75rem 0;">
+                    <div style="display: grid; grid-template-columns: 64px 220px 1fr 180px; gap: 1.5rem; align-items: start;">
+                        <div class="mono-label">№ {{ "%02d"|format(loop.index) }}</div>
+                        <div class="col gap-3">
+                            <span class="status status-{{ r.statut }}">
+                                <span class="status-dot"></span>
+                                {% if r.statut == 'praticable' %}Praticable{% elif r.statut == 'partiel' %}Partiel{% else %}Fermé{% endif %}
+                            </span>
+                            <span class="tag">{{ r.type_pratique }}</span>
+                        </div>
+                        <div>
+                            <div style="font-size: clamp(1.25rem, 2vw, 2rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.03em;">
+                                {{ r.sentier_nom }}
+                            </div>
+                            <div class="mono-meta mt-1">{{ r.region }} · signalé par <span class="accent">@{{ r.user_nom }}</span></div>
+                            {% if r.commentaire %}
+                                <p class="mt-2" style="font-size: 1rem; color: var(--muted-fg); max-width: 42rem; line-height: 1.6; font-style: italic;">
+                                    “{{ r.commentaire|truncate(140) }}”
+                                </p>
+                            {% endif %}
+                        </div>
+                        <div class="text-right col gap-2">
+                            <div class="mono-label">{{ r.anciennete }}</div>
+                            <div class="mono-meta accent">Voir le détail →</div>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">⛰️</div>
+                <p>Aucun signalement récent sur les sentiers.</p>
+                <a href="{{ url_for('sentiers.index') }}" class="btn btn-primary mt-2">Explorer les sentiers</a>
+            </div>
+        {% endif %}
+
+        <div class="flex center mt-4" style="justify-content: center;">
+            <a href="{{ url_for('sentiers.index') }}" class="btn">Parcourir les {{ stats.sentiers_count }} sentiers →</a>
+        </div>
     </div>
-    {% else %}
-    <div class="empty-state">
-        <div class="empty-state-icon">⛰️</div>
-        <p>Aucun signalement récent sur les sentiers.</p>
-        <a href="{{ url_for('sentiers.index') }}" class="btn btn-primary mt-2">Soyez le premier à signaler !</a>
+</section>
+
+<section style="padding: 6rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--card); position: relative; overflow: hidden;">
+    <div class="deco-number" style="right: -1%; top: 12%;">03</div>
+    <div class="container relative">
+        <div class="flex between mb-4" style="flex-wrap: wrap; gap: 1rem;">
+            <span class="mono-label">Section 03 — Manifeste</span>
+            <span class="mono-label accent">Sobriété numérique</span>
+        </div>
+
+        <span class="accent-bar"></span>
+
+        <h2 class="display" style="font-size: clamp(2.25rem, 6vw, 6.25rem); max-width: 14ch;">
+            Un site <span class="serif accent">léger</span> pour une nature <span class="serif">préservée.</span>
+        </h2>
+
+        <hr class="rule mt-4 mb-4">
+
+        <div class="grid grid-3" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+            <div style="border-top: 2px solid var(--accent); padding-top: 1rem;">
+                <div class="mono-label">№ 01</div>
+                <div style="font-size: clamp(2rem, 5vw, 4rem); font-weight: 900; line-height: 0.9; margin-top: 0.5rem;">{{ stats.sentiers_count }}</div>
+                <div class="mono-meta mt-1">sentiers référencés</div>
+            </div>
+            <div style="border-top: 2px solid var(--accent); padding-top: 1rem;">
+                <div class="mono-label">№ 02</div>
+                <div style="font-size: clamp(2rem, 5vw, 4rem); font-weight: 900; line-height: 0.9; margin-top: 0.5rem;">{{ stats.rapports_actifs_count }}</div>
+                <div class="mono-meta mt-1">rapports actifs</div>
+            </div>
+            <div style="border-top: 2px solid var(--accent); padding-top: 1rem;">
+                <div class="mono-label">№ 03</div>
+                <div style="font-size: clamp(2rem, 5vw, 4rem); font-weight: 900; line-height: 0.9; margin-top: 0.5rem;">{{ stats.users_count }}</div>
+                <div class="mono-meta mt-1">contributeurs</div>
+            </div>
+        </div>
     </div>
-    {% endif %}
-</div>
+</section>
+
+<section class="py-16 relative">
+    <div class="deco-number" style="left: -2%; bottom: 5%;">04</div>
+    <div class="container relative">
+        <span class="accent-bar"></span>
+        <div class="mono-label mb-2">Section 04 — Méthode</div>
+        <h2 class="display" style="font-size: clamp(2.25rem, 6vw, 5.5rem);">
+            Trois gestes,<br><span class="serif accent">aucune ambiguïté.</span>
+        </h2>
+
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 4rem; border-top: 1px solid var(--foreground);">
+            <div class="hover-card" style="padding: 2rem; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+                <div class="display accent" style="font-size: 4rem; line-height: 0.9;">01</div>
+                <h3 class="mt-3">Consulter</h3>
+                <p class="muted-text">Filtrez les sentiers par région et difficulté, puis lisez le dernier rapport actif avant de partir.</p>
+            </div>
+            <div class="hover-card" style="padding: 2rem; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+                <div class="display accent" style="font-size: 4rem; line-height: 0.9;">02</div>
+                <h3 class="mt-3">Décider</h3>
+                <p class="muted-text">Comparez les statuts, obstacles et dates de dépôt pour mesurer la fraîcheur de l'information.</p>
+            </div>
+            <div class="hover-card" style="padding: 2rem; border-bottom: 1px solid var(--border);">
+                <div class="display accent" style="font-size: 4rem; line-height: 0.9;">03</div>
+                <h3 class="mt-3">Contribuer</h3>
+                <p class="muted-text">En retour de sortie, déposez un rapport utile à la communauté en quelques secondes.</p>
+            </div>
+        </div>
+    </div>
+</section>
 {% endblock %}

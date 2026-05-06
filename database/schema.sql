@@ -5,11 +5,13 @@ CREATE TABLE IF NOT EXISTS "user" (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     nom              VARCHAR(100)  NOT NULL,
     email            VARCHAR(150)  UNIQUE NOT NULL,
-    mdp_hash         VARCHAR(255)  NOT NULL,
+    mdp_hash         TEXT           NOT NULL,
     niveau           TEXT          CHECK(niveau IN ('débutant', 'intermédiaire', 'expert')) DEFAULT 'débutant',
     localisation     VARCHAR(100),
     is_admin         BOOLEAN       DEFAULT 0,
-    date_inscription DATETIME      DEFAULT CURRENT_TIMESTAMP
+    date_inscription DATETIME      DEFAULT CURRENT_TIMESTAMP,
+    created_at       DATETIME,
+    updated_at       DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS sentier (
@@ -26,6 +28,8 @@ CREATE TABLE IF NOT EXISTS sentier (
     description         TEXT,
     user_id             INTEGER      NOT NULL,
     date_ajout          DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    created_at          DATETIME,
+    updated_at          DATETIME,
     FOREIGN KEY (user_id) REFERENCES "user"(id) ON DELETE CASCADE
 );
 
@@ -46,6 +50,8 @@ CREATE TABLE IF NOT EXISTS rapport (
     -- ex: neige,boue | verglas | arbre_tombe,crue | travaux
     obstacles        TEXT,
     commentaire      TEXT,
+    created_at       DATETIME,
+    updated_at       DATETIME,
     FOREIGN KEY (user_id)    REFERENCES "user"(id)     ON DELETE CASCADE,
     FOREIGN KEY (sentier_id) REFERENCES sentier(id)  ON DELETE CASCADE
 );

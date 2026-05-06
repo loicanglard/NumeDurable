@@ -33,10 +33,11 @@ def nouveau():
             for e in erreurs: flash(e, 'erreur')
             return redirect(request.referrer or url_for('sentiers.index'))
 
-        date_expiration = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.utcnow()
+        date_expiration = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
         db.execute(
-            'INSERT INTO rapport (user_id, sentier_id, statut, type_pratique, obstacles, commentaire, date_expiration) VALUES (?,?,?,?,?,?,?)',
-            (current_user.id, sentier_id, statut, type_pratique, obstacles or None, commentaire or None, date_expiration)
+            'INSERT INTO rapport (user_id, sentier_id, statut, type_pratique, obstacles, commentaire, date_expiration, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+            (current_user.id, sentier_id, statut, type_pratique, obstacles or None, commentaire or None, date_expiration, now, now)
         )
         db.commit()
         flash('Rapport déposé ! Valide 7 jours.', 'succes')
@@ -67,8 +68,8 @@ def modifier(id):
         commentaire = request.form.get('commentaire', '').strip()
 
         db.execute(
-            'UPDATE rapport SET statut=?, type_pratique=?, obstacles=?, commentaire=? WHERE id=?',
-            (statut, type_pratique, obstacles or None, commentaire or None, id)
+            'UPDATE rapport SET statut=?, type_pratique=?, obstacles=?, commentaire=?, updated_at=? WHERE id=?',
+            (statut, type_pratique, obstacles or None, commentaire or None, datetime.utcnow(), id)
         )
         db.commit()
         flash('Rapport modifié.', 'succes')
