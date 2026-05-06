@@ -37,7 +37,7 @@ Fichier dépendances : `requirements.txt` / `pyproject.toml`
 
 ---
 
-## 👥 Équipe
+## Équipe
 
 - Anglard Loïc
 - Batard-Plaza Esteban
@@ -47,7 +47,7 @@ Fichier dépendances : `requirements.txt` / `pyproject.toml`
 
 ---
 
-## 🔧 Installation rapide (développement)
+## Installation rapide (développement)
 
 Prérequis : Python 3.10+, pip
 
