@@ -14,8 +14,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const themeToggle = document.getElementById('theme-toggle');
     if (themeToggle) {
         const updateToggleButton = (theme) => {
-            // Si thème sombre -> on propose le soleil pour passer au clair ? 
-            // Non, l'utilisateur demande : ☀️ quand sombre, 🌙 quand clair.
             themeToggle.innerText = theme === 'light' ? '🌙' : '☀️';
         };
 
