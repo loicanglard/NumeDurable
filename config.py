@@ -9,10 +9,11 @@ class Config:
     # Prefer SUPABASE settings (URL + KEY). If not present, fall back to DATABASE_URL.
     SUPABASE_URL = os.environ.get('SUPABASE_URL')
     SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+    SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
     DATABASE = os.environ.get('DATABASE_URL')
-    if not (DATABASE or (SUPABASE_URL and SUPABASE_KEY)):
-        raise ValueError("Either DATABASE_URL or SUPABASE_URL + SUPABASE_KEY must be set in your environment.")
+    if not (DATABASE or (SUPABASE_URL and (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY))):
+        raise ValueError("Either DATABASE_URL or SUPABASE_URL + (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY) must be set in your environment.")
 
     DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() in ('1', 'true', 'yes')
     WTF_CSRF_ENABLED = True

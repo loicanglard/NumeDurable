@@ -4,6 +4,7 @@ from datetime import datetime
 from flask import Flask, render_template, flash, redirect, request
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
+from backend.supabase_utils import user_table
 
 # Rate limiting extension for request throttling (optional in development)
 try:
@@ -50,7 +51,8 @@ def create_app():
     try:
         from supabase import create_client
         supabase_url = app.config.get('SUPABASE_URL')
-        supabase_key = app.config.get('SUPABASE_KEY')
+        # Backend should prefer service role key to avoid RLS read/write blocks.
+        supabase_key = app.config.get('SUPABASE_SERVICE_ROLE_KEY') or app.config.get('SUPABASE_KEY')
         if supabase_url and supabase_key:
             app.supabase = create_client(supabase_url, supabase_key)
         else:
@@ -100,7 +102,7 @@ def create_app():
         try:
             supabase = app.supabase
             if supabase:
-                resp = supabase.table('user').select('*').eq('id', int(user_id)).execute()
+                resp = user_table(supabase).select('*').eq('id', int(user_id)).execute()
                 rows = resp.data or []
                 if rows:
                     return User(rows[0])
@@ -152,7 +154,7 @@ def create_app():
                     for s in (sresp.data or []):
                         sentiers_map[s['id']] = s
                 if user_ids:
-                    uresp = supabase.table('user').select('id, nom').in_('id', user_ids).execute()
+                    uresp = user_table(supabase).select('id, nom').in_('id', user_ids).execute()
                     for u in (uresp.data or []):
                         users_map[u['id']] = u
 
@@ -183,9 +185,9 @@ def create_app():
                 rapports = ann
 
                 # Stats via count
-                s_count = supabase.table('sentier').select('id', count='exact').execute().count or 0
-                u_count = supabase.table('user').select('id', count='exact').execute().count or 0
-                r_count = supabase.table('rapport').select('id', count='exact').gt('date_expiration', now).execute().count or 0
+                s_count = len((supabase.table('sentier').select('id').execute().data or []))
+                u_count = len((user_table(supabase).select('id').execute().data or []))
+                r_count = len((supabase.table('rapport').select('id').gt('date_expiration', now).execute().data or []))
                 stats = {'sentiers_count': s_count, 'users_count': u_count, 'rapports_actifs_count': r_count}
             else:
                 db = get_db()

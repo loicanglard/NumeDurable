@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from datetime import datetime, timedelta
 import logging
+from backend.db import get_db
 
 from backend.constants import OBSTACLES, STATUTS, TYPES_PRATIQUE, FLASH_SUCCESS, FLASH_ERROR
 
@@ -45,13 +46,12 @@ def nouveau():
             payload = {
                 'user_id': current_user.id,
                 'sentier_id': sentier_id,
+                'date_rapport': now.isoformat(),
                 'statut': statut,
                 'type_pratique': type_pratique,
                 'obstacles': obstacles or None,
                 'commentaire': commentaire or None,
                 'date_expiration': date_expiration.isoformat(),
-                'created_at': now.isoformat(),
-                'updated_at': now.isoformat()
             }
             supabase.table('rapport').insert(payload).execute()
         else:
@@ -105,7 +105,6 @@ def modifier(id):
                 'type_pratique': type_pratique,
                 'obstacles': obstacles or None,
                 'commentaire': commentaire or None,
-                'updated_at': datetime.utcnow().isoformat()
             }).eq('id', id).execute()
         else:
             db.execute(

@@ -5,6 +5,7 @@ from datetime import datetime
 from backend.db import get_db
 from backend.models import User
 from backend.constants import FLASH_SUCCESS, FLASH_ERROR, FLASH_INFO, get_limiter
+from backend.supabase_utils import user_table
 from backend.validators import validate_user_signup
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -44,7 +45,7 @@ def inscription():
         supabase = current_app.supabase
         try:
             if supabase:
-                exist_resp = supabase.table('user').select('id').eq('email', email).execute()
+                exist_resp = user_table(supabase).select('id').eq('email', email).execute()
                 if exist_resp.data:
                     flash('Cet email est déjà utilisé.', FLASH_ERROR)
                     return render_template('auth/inscription.html', nom=nom, email=email, niveau=niveau, localisation=localisation)
@@ -58,13 +59,11 @@ def inscription():
                     'niveau': niveau,
                     'localisation': localisation or None,
                     'date_inscription': now.isoformat(),
-                    'created_at': now.isoformat(),
-                    'updated_at': now.isoformat()
                 }
-                ins = supabase.table('user').insert(payload).select('id').execute()
+                ins = user_table(supabase).insert(payload).select('id').execute()
                 user_id = ins.data[0]['id'] if (ins.data and len(ins.data) > 0) else None
                 if user_id:
-                    user_resp = supabase.table('user').select('*').eq('id', user_id).execute()
+                    user_resp = user_table(supabase).select('*').eq('id', user_id).execute()
                     if user_resp.data:
                         user = User(user_resp.data[0])
                         login_user(user)
@@ -130,7 +129,7 @@ def connexion():
         supabase = current_app.supabase
         row = None
         if supabase:
-            resp = supabase.table('user').select('*').eq('email', email).execute()
+            resp = user_table(supabase).select('*').eq('email', email).execute()
             row = resp.data[0] if (resp.data and len(resp.data) > 0) else None
         else:
             db = get_db()

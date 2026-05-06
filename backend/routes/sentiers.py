@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 
 from backend.constants import DIFFICULTES, TYPES_PRATIQUE, FLASH_ERROR, FLASH_SUCCESS
+from backend.supabase_utils import user_table
 from backend.validators import validate_sentier_form
 sentiers_bp = Blueprint('sentiers', __name__, url_prefix='/sentiers')
 
@@ -29,9 +30,9 @@ def index():
         query = query.filter('region', 'ilike', f'%{region}%')
     if difficulte and difficulte in DIFFICULTES:
         query = query.eq('difficulte', difficulte)
-    # Total count
-    total_resp = query.select('id', count='exact').execute()
-    total = total_resp.count or 0
+    # Total count (compat with supabase client versions without `count=` kwarg)
+    total_resp = query.select('id').execute()
+    total = len(total_resp.data or [])
     # Pagination
     sentiers_resp = query.order('date_ajout', desc=True).limit(par_page).offset((page - 1) * par_page).execute()
     sentiers = sentiers_resp.data or []
@@ -70,13 +71,21 @@ def index():
 @sentiers_bp.route('/<int:id>')
 def detail(id):
     supabase = current_app.supabase
-    # Fetch sentier and its author
-    sentier_resp = supabase.table('sentier').select('*, "user":user(nom)').eq('id', id).execute()
+    # Fetch sentier (author resolved separately to avoid PostgREST relation name issues).
+    sentier_resp = supabase.table('sentier').select('*').eq('id', id).execute()
     sentiers = sentier_resp.data or []
     sentier = sentiers[0] if sentiers else None
     if not sentier:
         flash('Sentier introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
+
+    auteur_nom = None
+    auteur_id = sentier.get('user_id')
+    if auteur_id:
+        auteur_resp = user_table(supabase).select('id, nom').eq('id', auteur_id).limit(1).execute()
+        if auteur_resp.data:
+            auteur_nom = auteur_resp.data[0].get('nom')
+    sentier['auteur_nom'] = auteur_nom
 
     # Fetch rapports and attach user_nom
     rapports_resp = supabase.table('rapport').select('*').eq('sentier_id', id).order('date_rapport', desc=True).limit(20).execute()
@@ -84,7 +93,7 @@ def detail(id):
     # Attach user names for rapports (batch fetch unique users)
     user_ids = sorted({r.get('user_id') for r in rapports if r.get('user_id')})
     if user_ids:
-        users_resp = supabase.table('user').select('id, nom').in_('id', user_ids).execute()
+        users_resp = user_table(supabase).select('id, nom').in_('id', user_ids).execute()
         users_map = {u['id']: u['nom'] for u in (users_resp.data or [])}
         for r in rapports:
             r['user_nom'] = users_map.get(r.get('user_id'))
@@ -136,8 +145,7 @@ def nouveau():
             'saison_recommandee': saison_recommandee or None,
             'description': description or None,
             'user_id': current_user.id,
-            'created_at': now.isoformat(),
-            'updated_at': now.isoformat()
+            'date_ajout': now.isoformat(),
         }
         resp = supabase.table('sentier').insert(insert_payload).select('id').execute()
         new_id = resp.data[0]['id'] if (resp.data and len(resp.data) > 0) else None
@@ -197,7 +205,6 @@ def modifier(id):
             'terrain': terrain or None,
             'saison_recommandee': saison_recommandee or None,
             'description': description or None,
-            'updated_at': datetime.utcnow().isoformat()
         }).eq('id', id).execute()
         flash('Sentier modifié.', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=id))

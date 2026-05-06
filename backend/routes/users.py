@@ -6,6 +6,7 @@ import bcrypt
 from backend.constants import NIVEAUX, FLASH_SUCCESS, FLASH_ERROR, FLASH_INFO
 from backend.validators import validate_user_profile_update
 from backend.db import get_db
+from backend.supabase_utils import user_table
 
 users_bp = Blueprint('users', __name__, url_prefix='/utilisateurs')
 
@@ -55,21 +56,18 @@ def profil_modifier():
 
     if supabase:
         if mdp:
-            now = datetime.utcnow()
             mdp_hash = bcrypt.hashpw(mdp.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            supabase.table('user').update({
+            user_table(supabase).update({
                 'nom': nom,
                 'niveau': niveau,
                 'localisation': localisation or None,
                 'mdp_hash': mdp_hash,
-                'updated_at': now.isoformat()
             }).eq('id', current_user.id).execute()
         else:
-            supabase.table('user').update({
+            user_table(supabase).update({
                 'nom': nom,
                 'niveau': niveau,
                 'localisation': localisation or None,
-                'updated_at': datetime.utcnow().isoformat()
             }).eq('id', current_user.id).execute()
     else:
         db = get_db()
@@ -91,7 +89,7 @@ def profil_modifier():
 def supprimer():
     supabase = current_app.supabase
     if supabase:
-        supabase.table('user').delete().eq('id', current_user.id).execute()
+        user_table(supabase).delete().eq('id', current_user.id).execute()
     else:
         db = get_db()
         db.execute('DELETE FROM "user" WHERE id = %s', (current_user.id,))
@@ -106,17 +104,19 @@ def supprimer():
 def public(id):
     supabase = current_app.supabase
     if supabase:
-        uresp = supabase.table('user').select('id, nom, niveau, localisation, date_inscription').eq('id', id).execute()
+        uresp = user_table(supabase).select('id, nom, niveau, localisation, date_inscription').eq('id', id).execute()
         user = uresp.data[0] if (uresp.data and len(uresp.data) > 0) else None
+        rresp = supabase.table('rapport').select('*').eq('user_id', id).order('date_rapport', desc=True).limit(10).execute()
+        rapports = rresp.data or []
     else:
         db = get_db()
         user = db.execute('SELECT id, nom, niveau, localisation, date_inscription FROM "user" WHERE id = %s', (id,)).fetchone()
+        rapports = db.execute('''
+            SELECT r.*, s.nom as sentier_nom FROM rapport r
+            JOIN sentier s ON r.sentier_id = s.id
+            WHERE r.user_id = %s ORDER BY r.date_rapport DESC LIMIT 10
+        ''', (id,)).fetchall()
     if not user:
         flash('Utilisateur introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
-    rapports = db.execute('''
-        SELECT r.*, s.nom as sentier_nom FROM rapport r
-        JOIN sentier s ON r.sentier_id = s.id
-        WHERE r.user_id = %s ORDER BY r.date_rapport DESC LIMIT 10
-    ''', (id,)).fetchall()
     return render_template('users/public.html', profil=user, rapports=rapports)

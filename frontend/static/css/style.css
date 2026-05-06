@@ -1,8 +1,5 @@
-/* T.R.A.I.L — Terrain Rando Alerte Info Live */
-/* Design System Green IT — Performance & Sobriété */
-
 :root {
-    /* Thème Sombre par défaut (Outdoor & Technical) */
+    /* Thème Sombre par défaut */
     --bg:                  #0d0f0d;
     --bg-card:             #151815;
     --text:                #e2e8e2;
@@ -32,7 +29,7 @@
 }
 
 [data-theme="light"] {
-    /* Thème Clair (Soft & Professional) */
+    /* Thème Clair*/
     --bg:                  #f4f5f2;
     --bg-card:             #ffffff;
     --text:                #1a1d1a;
@@ -312,3 +309,61 @@ footer {
 }
 
 .footer-wrapper { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+
+.greenit-panel {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 1rem;
+    box-shadow: var(--shadow);
+}
+
+.greenit-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.greenit-title {
+    font-size: 1rem;
+    margin: 0;
+}
+
+.greenit-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.85rem;
+}
+
+.greenit-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.7rem;
+}
+
+.greenit-label {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-soft);
+    margin-bottom: 0.3rem;
+}
+
+.greenit-value {
+    display: block;
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.greenit-note {
+    margin-top: 0.8rem;
+    margin-bottom: 0;
+}
