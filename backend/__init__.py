@@ -5,25 +5,16 @@ from flask import Flask, render_template, flash, redirect, request
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 
-# Rate limiting extension (initialized into app in create_app)
+# Rate limiting extension for request throttling (optional in development)
 try:
     from flask_limiter import Limiter
     from flask_limiter.util import get_remote_address
-
-    # Create a Limiter instance for import by routes; will be init_app(app) below
     limiter = Limiter(key_func=get_remote_address)
-except Exception:
-    # Fallback dummy limiter when package is not installed (development)
-    class _DummyLimiter:
-        def init_app(self, app):
-            return None
-
-        def limit(self, *a, **k):
-            def _decorator(f):
-                return f
-            return _decorator
-
-    limiter = _DummyLimiter()
+    LIMITER_AVAILABLE = True
+except ImportError:
+    # If flask_limiter is not installed, disable rate limiting (dev mode)
+    limiter = None
+    LIMITER_AVAILABLE = False
 
 def create_app():
     # Détermination du projet root de manière robuste
@@ -39,6 +30,15 @@ def create_app():
     # Chargement de la config
     app.config.from_object('config.Config')
 
+    # Fail fast if SECRET_KEY is weak or missing in production
+    if not app.debug and not app.config.get('TESTING'):
+        sk = app.config.get('SECRET_KEY', '')
+        if not sk or sk == 'Soleil1234' or len(sk) < 32:
+            raise RuntimeError(
+                'SECRET_KEY must be set to a strong random value in production. '
+                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
+            )
+
     if not app.logger.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
@@ -50,12 +50,9 @@ def create_app():
     csrf = CSRFProtect(app)
     init_db(app)
 
-    # Initialize rate limiter
-    try:
+    # Initialize rate limiter if available
+    if LIMITER_AVAILABLE and limiter:
         limiter.init_app(app)
-    except Exception:
-        # If limiter cannot initialize (dev without dependency), continue silently
-        pass
 
     # Flask-Login setup
     login_manager = LoginManager()
@@ -73,7 +70,8 @@ def create_app():
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
-        flash(f"Session expirée ou erreur de sécurité. Veuillez réessayer.", 'erreur')
+        from backend.constants import FLASH_ERROR
+        flash(f"Session expirée ou erreur de sécurité. Veuillez réessayer.", FLASH_ERROR)
         return redirect(request.url)
 
     @app.errorhandler(404)
@@ -93,8 +91,8 @@ def create_app():
             row = db.execute('SELECT * FROM "user" WHERE id = ?', (user_id,)).fetchone()
             if row:
                 return User(row)
-        except Exception:
-            pass
+        except Exception as e:
+            app.logger.warning(f"Failed to load user {user_id}: {e}")
         return None
 
     @app.errorhandler(500)
@@ -116,6 +114,10 @@ def create_app():
 
     @app.route('/')
     def index():
+        """Page d'accueil: liste des rapports récents et statistiques."""
+        rapports = []
+        stats = {'sentiers_count': 0, 'users_count': 0, 'rapports_actifs_count': 0}
+        
         try:
             db = get_db()
             rapports = db.execute('''
@@ -134,9 +136,9 @@ def create_app():
                     (SELECT COUNT(*) FROM "user") AS users_count,
                     (SELECT COUNT(*) FROM rapport WHERE date_expiration > datetime('now')) AS rapports_actifs_count
             ''').fetchone()
-        except Exception:
-            rapports = []
-            stats = {'sentiers_count': 0, 'users_count': 0, 'rapports_actifs_count': 0}
+        except Exception as e:
+            app.logger.error(f"Error loading homepage data: {e}")
+            # Return empty data but don't fail the page
 
         rapports_recents = []
         for r in rapports:
@@ -155,6 +157,17 @@ def create_app():
             rapports_recents=rapports_recents,
             stats=stats,
         )
+        
+    @app.route('/health')
+    def health():
+        try:
+            db = get_db()
+            db.execute('SELECT 1').fetchone()
+            db_status = 'ok'
+        except Exception:
+            db_status = 'error'
+        status = 'ok' if db_status == 'ok' else 'degraded'
+        return {'status': status, 'db': db_status}, 200 if status == 'ok' else 503
 
     @app.context_processor
     def inject_now():

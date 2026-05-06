@@ -4,9 +4,11 @@ import bcrypt
 from datetime import datetime
 from backend.db import get_db
 from backend.models import User
-from backend import limiter
+from backend.constants import FLASH_SUCCESS, FLASH_ERROR, FLASH_INFO, get_limiter
+from backend.validators import validate_user_signup
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+limiter = get_limiter()
 
 
 @auth_bp.route('/inscription', methods=['GET', 'POST'])
@@ -23,21 +25,19 @@ def inscription():
         niveau = request.form.get('niveau', 'débutant')
         localisation = request.form.get('localisation', '').strip()
 
-        erreurs = []
-        if not nom:
-            erreurs.append('Le nom est requis.')
-        if not email or '@' not in email:
-            erreurs.append('Email invalide.')
-        if len(mdp) < 8:
-            erreurs.append('Le mot de passe doit faire au moins 8 caractères.')
-        if mdp != mdp_confirm:
-            erreurs.append('Les mots de passe ne correspondent pas.')
-        if niveau not in ('débutant', 'intermédiaire', 'expert'):
-            erreurs.append('Niveau invalide.')
-
-        if erreurs:
+        # Valider les données (logique centralisée)
+        form_data = {
+            'nom': nom,
+            'email': email,
+            'mdp': mdp,
+            'mdp_confirm': mdp_confirm,
+            'niveau': niveau
+        }
+        is_valid, erreurs = validate_user_signup(form_data)
+        
+        if not is_valid:
             for e in erreurs:
-                flash(e, 'erreur')
+                flash(e, FLASH_ERROR)
             return render_template('auth/inscription.html',
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)
 
@@ -45,7 +45,7 @@ def inscription():
         try:
             existant = db.execute('SELECT id FROM "user" WHERE email = ?', (email,)).fetchone()
             if existant:
-                flash('Cet email est déjà utilisé.', 'erreur')
+                flash('Cet email est déjà utilisé.', FLASH_ERROR)
                 return render_template('auth/inscription.html',
                                        nom=nom, email=email, niveau=niveau, localisation=localisation)
 
@@ -63,17 +63,17 @@ def inscription():
             if user_row:
                 user = User(user_row)
                 login_user(user)
-                flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', 'succes')
+                flash(f'Bienvenue parmi nous, {user.nom} ! Votre compte a été créé.', FLASH_SUCCESS)
                 return redirect(url_for('sentiers.index'))
 
-            flash('Compte créé ! Veuillez vous connecter.', 'succes')
+            flash('Compte créé ! Veuillez vous connecter.', FLASH_SUCCESS)
             return redirect(url_for('auth.connexion'))
 
         except Exception:
             if db:
                 db.rollback()
             current_app.logger.exception("Erreur lors de l'inscription")
-            flash('Erreur lors de l\'inscription. Veuillez réessayer plus tard.', 'erreur')
+            flash('Erreur lors de l\'inscription. Veuillez réessayer plus tard.', FLASH_ERROR)
             return render_template('auth/inscription.html',
                                    nom=nom, email=email, niveau=niveau, localisation=localisation)
 
@@ -106,14 +106,14 @@ def connexion():
             user = User(row)
             login_user(user, remember=True)
             
-            flash(f'Content de vous revoir, {user.nom} !', 'succes')
+            flash(f'Content de vous revoir, {user.nom} !', FLASH_SUCCESS)
             
             next_page = request.args.get('next')
             if next_page and is_safe_url(next_page):
                 return redirect(next_page)
             return redirect(url_for('sentiers.index'))
         else:
-            flash('Email ou mot de passe incorrect.', 'erreur')
+            flash('Email ou mot de passe incorrect.', FLASH_ERROR)
 
     return render_template('auth/connexion.html')
 
@@ -122,5 +122,5 @@ def connexion():
 @login_required
 def deconnexion():
     logout_user()
-    flash('Vous avez été déconnecté.', 'info')
+    flash('Vous avez été déconnecté.', FLASH_INFO)
     return redirect(url_for('index'))

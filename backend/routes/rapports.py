@@ -2,12 +2,15 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from backend.db import get_db
 from datetime import datetime, timedelta
+import logging
 
+from backend.constants import OBSTACLES, STATUTS, TYPES_PRATIQUE, FLASH_SUCCESS, FLASH_ERROR
+
+# Configure logging for important actions
+logger = logging.getLogger(__name__)
 rapports_bp = Blueprint('rapports', __name__, url_prefix='/rapports')
 
-STATUTS = ['praticable', 'partiel', 'ferme']
-TYPES_PRATIQUE = ['trail', 'vtt', 'rando', 'ski_rando']
-OBSTACLES_POSSIBLES = ['neige', 'boue', 'verglas', 'arbre_tombe', 'crue', 'travaux', 'autre']
+OBSTACLES_POSSIBLES = OBSTACLES
 
 
 @rapports_bp.route('/nouveau', methods=['GET', 'POST'])
@@ -28,9 +31,10 @@ def nouveau():
         if not sentier_id: erreurs.append('Sentier requis.')
         if statut not in STATUTS: erreurs.append('Statut invalide.')
         if type_pratique not in TYPES_PRATIQUE: erreurs.append('Type de pratique invalide.')
+        
 
         if erreurs:
-            for e in erreurs: flash(e, 'erreur')
+            for e in erreurs: flash(e, FLASH_ERROR)
             return redirect(request.referrer or url_for('sentiers.index'))
 
         now = datetime.utcnow()
@@ -40,7 +44,8 @@ def nouveau():
             (current_user.id, sentier_id, statut, type_pratique, obstacles or None, commentaire or None, date_expiration, now, now)
         )
         db.commit()
-        flash('Rapport déposé ! Valide 7 jours.', 'succes')
+        logger.info(f"Rapport créé par user {current_user.id} pour sentier {sentier_id}")
+        flash('Rapport déposé ! Valide 7 jours.', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=sentier_id))
 
     sentiers = db.execute('SELECT id, nom, region FROM sentier ORDER BY nom').fetchall()
@@ -55,10 +60,10 @@ def modifier(id):
     db = get_db()
     rapport = db.execute('SELECT * FROM rapport WHERE id = ?', (id,)).fetchone()
     if not rapport:
-        flash('Rapport introuvable.', 'erreur')
+        flash('Rapport introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
     if rapport['user_id'] != current_user.id and not current_user.is_admin:
-        flash('Non autorisé.', 'erreur')
+        flash('Non autorisé.', FLASH_ERROR)
         return redirect(url_for('sentiers.detail', id=rapport['sentier_id']))
 
     if request.method == 'POST':
@@ -72,7 +77,7 @@ def modifier(id):
             (statut, type_pratique, obstacles or None, commentaire or None, datetime.utcnow(), id)
         )
         db.commit()
-        flash('Rapport modifié.', 'succes')
+        flash('Rapport modifié.', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=rapport['sentier_id']))
 
     sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (rapport['sentier_id'],)).fetchone()
@@ -89,14 +94,14 @@ def supprimer(id):
     db = get_db()
     rapport = db.execute('SELECT * FROM rapport WHERE id = ?', (id,)).fetchone()
     if not rapport:
-        flash('Rapport introuvable.', 'erreur')
+        flash('Rapport introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
     if rapport['user_id'] != current_user.id and not current_user.is_admin:
-        flash('Non autorisé.', 'erreur')
+        flash('Non autorisé.', FLASH_ERROR)
         return redirect(url_for('sentiers.detail', id=rapport['sentier_id']))
 
     sentier_id = rapport['sentier_id']
     db.execute('DELETE FROM rapport WHERE id = ?', (id,))
     db.commit()
-    flash('Rapport supprimé.', 'succes')
+    flash('Rapport supprimé.', FLASH_SUCCESS)
     return redirect(url_for('sentiers.detail', id=sentier_id))

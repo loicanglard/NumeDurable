@@ -1,11 +1,11 @@
 import os
+import secrets
 from datetime import timedelta
 
 
+
 class Config:
-    # SECRET_KEY must come from environment in production; fallback to a
-    # generated key for development only (not committed).
-    SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
+    SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
     # Base de données (SQLite local par défaut)
     DB_TYPE = os.environ.get('DB_TYPE', 'sqlite')

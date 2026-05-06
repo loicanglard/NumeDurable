@@ -1,12 +1,13 @@
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 import bcrypt
+
+from backend.constants import NIVEAUX, FLASH_SUCCESS, FLASH_ERROR, FLASH_INFO
+from backend.validators import validate_user_profile_update
 from backend.db import get_db
 
 users_bp = Blueprint('users', __name__, url_prefix='/utilisateurs')
-
-NIVEAUX = ['débutant', 'intermédiaire', 'expert']
-
 
 @users_bp.route('/profil')
 @login_required
@@ -32,14 +33,17 @@ def profil_modifier():
     mdp = request.form.get('mdp', '')
     mdp_confirm = request.form.get('mdp_confirm', '')
 
-    erreurs = []
-    if not nom: erreurs.append('Le nom est requis.')
-    if niveau not in NIVEAUX: erreurs.append('Niveau invalide.')
-    if mdp and len(mdp) < 8: erreurs.append('Mot de passe trop court (8 car. min).')
-    if mdp and mdp != mdp_confirm: erreurs.append('Les mots de passe ne correspondent pas.')
-
-    if erreurs:
-        for e in erreurs: flash(e, 'erreur')
+    # Valider via le helper centralisé
+    form_data = {
+        'nom': nom,
+        'niveau': niveau,
+        'mdp': mdp,
+        'mdp_confirm': mdp_confirm
+    }
+    is_valid, erreurs = validate_user_profile_update(form_data)
+    
+    if not is_valid:
+        for e in erreurs: flash(e, FLASH_ERROR)
         return redirect(url_for('users.profil'))
 
     if mdp:
@@ -51,7 +55,7 @@ def profil_modifier():
         db.execute('UPDATE "user" SET nom=?, niveau=?, localisation=?, updated_at=? WHERE id=?',
                    (nom, niveau, localisation or None, datetime.utcnow(), current_user.id))
     db.commit()
-    flash('Profil mis à jour.', 'succes')
+    flash('Profil mis à jour.', FLASH_SUCCESS)
     return redirect(url_for('users.profil'))
 
 
@@ -63,7 +67,7 @@ def supprimer():
     db.commit()
     from flask_login import logout_user
     logout_user()
-    flash('Votre compte a été supprimé.', 'info')
+    flash('Votre compte a été supprimé.', FLASH_INFO)
     return redirect(url_for('index'))
 
 
@@ -72,7 +76,7 @@ def public(id):
     db = get_db()
     user = db.execute('SELECT id, nom, niveau, localisation, date_inscription FROM "user" WHERE id = ?', (id,)).fetchone()
     if not user:
-        flash('Utilisateur introuvable.', 'erreur')
+        flash('Utilisateur introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
     rapports = db.execute('''
         SELECT r.*, s.nom as sentier_nom FROM rapport r

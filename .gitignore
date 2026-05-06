@@ -29,3 +29,8 @@ env/
 
 # Logs
 *.log
+
+
+# Node
+package-lock.json
+node_modules/

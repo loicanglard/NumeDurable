@@ -2,34 +2,49 @@
 
 **Ce sentier est-il praticable aujourd'hui ?**
 
-T.R.A.I.L est une plateforme communautaire sobre permettant aux pratiquants trail, VTT et randonnée de consulter et partager l'état réel des sentiers. Les rapports de conditions (praticable / partiel / fermé) sont déposés par la communauté et expirent automatiquement après 7 jours pour garantir des données toujours fraîches.
+T.R.A.I.L est une plateforme communautaire pour trail runners, VTTistes et randonneurs : consultez et partagez l'état réel des sentiers en montagne. Les rapports de conditions sont déposés par la communauté et expirent automatiquement après 7 jours, garantissant des données fraîches et fiables.
 
 > Projet réalisé dans le cadre du cours **TI616 — Numérique Durable** (EFREI Paris, 2025-2026).
 
-Les membres de l'équipe sont : 
-Danthine Mathieu
-Anglard Loïc
-Cao Lilian
-Chollet Maelle
-Batard-Plaza Esteban
+**Équipe** : Danthine Mathieu, Anglard Loïc, Cao Lilian, Chollet Maelle, Batard-Plaza Esteban
+
 ---
 
+## 🎯 Comment ça marche
 
+### Vue utilisateur
 
-## Stack technique
+1. **Accueil** : Voir les 5 derniers rapports publiés (depuis moins d'une heure à plusieurs jours)
+2. **Explorer sentiers** : Parcourir la liste (filtrer par région/difficulté), voir le dernier signalement pour chaque
+3. **Détail sentier** : Voir tous les rapports récents (moins de 7 jours) pour ce sentier
+4. **Publier un rapport** : Indiquer l'état (praticable / partiel / fermé) + obstacles rencontrés
+5. **Profil** : Consulter ses contributions + modifier ses paramètres
+
+### Flux métier
+
+- **Rapport** = observation horodatée d'un utilisateur pour un sentier
+- **Validité** = 7 jours max (puis automatiquement ignoré par les requêtes)
+- **État** = praticable, partiel, ou fermé
+- **Obstacles** = tags multiples (neige, boue, arbre tombé, etc.) pour signaler les problèmes spécifiques
+
+---
+
+## 🛠️ Stack technique
 
 | Composant | Technologie | Justification Green IT |
 |-----------|-------------|----------------------|
-| Back-end | Python Flask 3.1 | Micro-framework, 4 dépendances en prod |
-| Base de données | SQLite 3 | Fichier unique, 0 serveur réseau |
-| Templates | Jinja2 (inclus Flask) | Rendu serveur, 0 JS framework |
-| CSS | Natif (variables, flexbox) | < 10 Ko, polices système uniquement |
-| JS | Vanilla (< 30 lignes) | Uniquement pour les confirmations |
-| Déploiement | Render.com | Gratuit, CI/CD GitHub, hébergement sobre |
+| **Back-end** | Python Flask 3.1 | Micro-framework minimaliste, ~4 dépendances en prod seulement |
+| **Base de données** | SQLite 3 | Fichier unique, 0 serveur externe, 0 requêtes réseau |
+| **Templates** | Jinja2 (Flask) | Rendu côté serveur, 0 framework JS, pas d'API REST |
+| **CSS** | Natif (variables, flexbox) | < 10 Ko minifié, polices système uniquement |
+| **JS** | Vanilla (< 30 lignes) | Uniquement pour confirmations, pas de dépendances |
+| **Déploiement** | Render.com | Gratuit + CI/CD GitHub auto, hébergement sobre |
+
+**Philosophie** : Chaque choix prioritize la sobriété numérique (empreinte carbone faible, pages ultra-légères).
 
 ---
 
-## Lancer le projet localement
+## 🚀 Lancer le projet localement
 
 ### Prérequis
 
@@ -115,6 +130,77 @@ ti616_projet/
         ├── detail_sentier.md
         └── profil.md
 ```
+
+---
+
+## 🤔 Choix techniques et compromis
+
+### Pourquoi SQLite et pas PostgreSQL / MySQL ?
+
+**SQLite** = une seule base de données (fichier `.db`), zéro serveur externe, zéro requêtes réseau pour la BDD. Parfait pour :
+- Petite à moyenne charge (quelques centaines d'utilisateurs)
+- Déploiement simple (Render gratuit peut héberger des fichiers)
+- Empreinte carbone minimale (pas de serveur dédié)
+
+**Limite** : Pas optimisé pour > 10K requêtes/sec concurrentes. Acceptable pour un projet étudiant régional.
+
+### Pourquoi pas d'ORM (SQLAlchemy) ?
+
+Code SQL brut avec paramètres est plus simple à apprendre et plus transparent. L'ORM ajoute une couche d'abstraction peu utile ici (requêtes simples).
+
+**Avantage** : Déboguer une requête SQL en 10 lignes vs tracer une ORM complexe = gain de temps.
+
+### Pas d'API REST ?
+
+La plateforme n'expose que du rendu HTML/Jinja2. Une API ajoute des endpoints supplémentaires = surface d'attaque, overhead.
+
+**Futur** : Si besoin d'une mobile app, l'API REST sera facile à ajouter (endpoints `/api/sentiers`, etc.).
+
+---
+
+## ⚠️ Limitations actuelles & améliorations futures
+
+### Limitations
+
+- ❌ **Pas de pagination côté client** : Liste des sentiers peut être lente avec > 500 entrées
+- ❌ **Géolocalisation absente** : Les sentiers sont filtrés par région (texte), pas par coordonnées GPS
+- ❌ **Pas de notifications** : Utilisateur ne sait pas si son rapport a été marqué utile/obsolète
+- ❌ **Rate limiting optionnel** : Activé en prod seulement (dépend de `flask_limiter`)
+- ❌ **Tests partiels** : Sentiers et rapports couverts, auth/users en cours
+
+### Améliora futures possibles
+
+1. **Intégration Overpass API** : Récupérer les sentiers OpenStreetMap automatiquement
+2. **Alerts email** : Notifier utilisateur quand un rapport = posté pour "ses" sentiers
+3. **Modération communautaire** : Signaler rapports obsolètes/incorrects
+4. **Statistiques** : Dashboard d'activité (rapports/semaine, utilisateurs actifs, etc.)
+5. **Hors ligne** : PWA pour consulter sans réseau
+
+---
+
+## 🧪 Développement & tests
+
+### Lancer les tests
+
+```bash
+pytest tests/
+```
+
+### Charger des données de démonstration
+
+```bash
+flask --app app init-db  # Déjà inclus ci-dessus
+```
+
+Les tests incluent des données de démo automatiquement.
+
+### Accès administrateur
+
+L'utilisateur demo créé à l'init-db a les droits admin :
+- Email: `demo@trail.fr`
+- Mot de passe: `demo1234`
+
+Peut supprimer/modifier tout sentier et rapport.
 
 ---
 

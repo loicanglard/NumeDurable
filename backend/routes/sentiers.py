@@ -3,10 +3,9 @@ from flask_login import login_required, current_user
 from backend.db import get_db
 from datetime import datetime
 
+from backend.constants import DIFFICULTES, TYPES_PRATIQUE, FLASH_ERROR, FLASH_SUCCESS
+from backend.validators import validate_sentier_form
 sentiers_bp = Blueprint('sentiers', __name__, url_prefix='/sentiers')
-
-DIFFICULTES = ['facile', 'moyen', 'difficile', 'expert']
-TYPES_PRATIQUE = ['trail', 'vtt', 'rando', 'ski_rando']
 
 
 @sentiers_bp.route('/')
@@ -32,7 +31,13 @@ def index():
         params + [par_page, (page - 1) * par_page]
     ).fetchall()
 
+    # TODO: Optimiser avec pagination côté DB (LIMIT 0, 10) dès que effectif > 500 sentiers
+    # Actuellement performant, mais devient lent avec beaucoup de données
+    
     # Dernier rapport valide pour tous les sentiers affichés en une seule requête.
+    # Stratégie : récupérer le rapport le plus récent (max date_rapport) non expiré
+    # pour chaque sentier, en une requête optimisée. On utilise une sous-requête
+    # pour récupérer les MAX dates, puis on join pour éviter les GROUP BY dupliqués.
     dernier_rapport = {}
     if sentiers:
         sentier_ids = [s['id'] for s in sentiers]
@@ -67,7 +72,7 @@ def detail(id):
     db = get_db()
     sentier = db.execute('SELECT s.*, u.nom as auteur_nom FROM sentier s JOIN "user" u ON s.user_id = u.id WHERE s.id = ?', (id,)).fetchone()
     if not sentier:
-        flash('Sentier introuvable.', 'erreur')
+        flash('Sentier introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
 
     rapports = db.execute('''
@@ -94,34 +99,31 @@ def nouveau():
         saison_recommandee = request.form.get('saison_recommandee', '').strip()
         description = request.form.get('description', '').strip()
 
-        erreurs = []
-        if not nom: erreurs.append('Le nom est requis.')
-        if not region: erreurs.append('La région est requise.')
-        try:
-            distance_km = float(distance_km)
-            if distance_km <= 0: raise ValueError
-        except (ValueError, TypeError):
-            erreurs.append('Distance invalide.')
-        try:
-            denivele_pos = int(denivele_pos)
-            if denivele_pos < 0: raise ValueError
-        except (ValueError, TypeError):
-            erreurs.append('Dénivelé invalide.')
-        if difficulte not in DIFFICULTES:
-            erreurs.append('Difficulté invalide.')
-
-        if erreurs:
-            for e in erreurs: flash(e, 'erreur')
+        # Valider via le helper centralisé
+        form_data = {
+            'nom': nom,
+            'region': region,
+            'distance_km': distance_km,
+            'denivele_pos': denivele_pos,
+            'difficulte': difficulte,
+            'description': description
+        }
+        is_valid, erreurs = validate_sentier_form(form_data)
+        
+        if not is_valid:
+            for e in erreurs: flash(e, FLASH_ERROR)
             return render_template('sentiers/form.html', difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='nouveau')
 
         db = get_db()
         now = datetime.utcnow()
+        distance_km_float = float(distance_km)
+        denivele_pos_int = int(denivele_pos)
         cur = db.execute(
             'INSERT INTO sentier (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain, saison_recommandee, description, user_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-            (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, current_user.id, now, now)
+            (nom, region, distance_km_float, denivele_pos_int, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, current_user.id, now, now)
         )
         db.commit()
-        flash('Sentier ajouté avec succès !', 'succes')
+        flash('Sentier ajouté avec succès !', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=cur.lastrowid))
 
     return render_template('sentiers/form.html', difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='nouveau')
@@ -133,10 +135,10 @@ def modifier(id):
     db = get_db()
     sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (id,)).fetchone()
     if not sentier:
-        flash('Sentier introuvable.', 'erreur')
+        flash('Sentier introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
     if sentier['user_id'] != current_user.id and not current_user.is_admin:
-        flash('Non autorisé.', 'erreur')
+        flash('Non autorisé.', FLASH_ERROR)
         return redirect(url_for('sentiers.detail', id=id))
 
     if request.method == 'POST':
@@ -163,7 +165,7 @@ def modifier(id):
             erreurs.append('Dénivelé invalide.')
 
         if erreurs:
-            for e in erreurs: flash(e, 'erreur')
+            for e in erreurs: flash(e, FLASH_ERROR)
             return render_template('sentiers/form.html', sentier=sentier, difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='modifier')
 
         db.execute(
@@ -171,7 +173,7 @@ def modifier(id):
             (nom, region, distance_km, denivele_pos, difficulte, types_pratique, terrain or None, saison_recommandee or None, description or None, datetime.utcnow(), id)
         )
         db.commit()
-        flash('Sentier modifié.', 'succes')
+        flash('Sentier modifié.', FLASH_SUCCESS)
         return redirect(url_for('sentiers.detail', id=id))
 
     return render_template('sentiers/form.html', sentier=sentier, difficultes=DIFFICULTES, types_pratique=TYPES_PRATIQUE, mode='modifier')
@@ -183,13 +185,13 @@ def supprimer(id):
     db = get_db()
     sentier = db.execute('SELECT * FROM sentier WHERE id = ?', (id,)).fetchone()
     if not sentier:
-        flash('Sentier introuvable.', 'erreur')
+        flash('Sentier introuvable.', FLASH_ERROR)
         return redirect(url_for('sentiers.index'))
     if sentier['user_id'] != current_user.id and not current_user.is_admin:
-        flash('Non autorisé.', 'erreur')
+        flash('Non autorisé.', FLASH_ERROR)
         return redirect(url_for('sentiers.detail', id=id))
 
     db.execute('DELETE FROM sentier WHERE id = ?', (id,))
     db.commit()
-    flash('Sentier supprimé.', 'succes')
+    flash('Sentier supprimé.', FLASH_SUCCESS)
     return redirect(url_for('sentiers.index'))

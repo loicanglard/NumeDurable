@@ -12,34 +12,32 @@ def _has_column(db, table_name, column_name):
 
 
 def _ensure_audit_columns(db):
-    table_columns = {
-        'user': ('created_at', 'updated_at'),
-        'sentier': ('created_at', 'updated_at'),
-        'rapport': ('created_at', 'updated_at'),
+    """Crée les colonnes d'audit (created_at, updated_at) si absentes.
+    
+    Effectue une migration progressive : crée les colonnes, puis migre
+    les données depuis les anciennes colonnes de date (date_inscription,
+    date_ajout, date_rapport) pour garantir la continuité des données.
+    """
+    # Mapping table -> (audit_columns, source_column_for_legacy_data)
+    table_mappings = {
+        'user': (('created_at', 'updated_at'), 'date_inscription'),
+        'sentier': (('created_at', 'updated_at'), 'date_ajout'),
+        'rapport': (('created_at', 'updated_at'), 'date_rapport'),
     }
-    for table_name, columns in table_columns.items():
+    
+    for table_name, (columns, legacy_column) in table_mappings.items():
+        # Ajouter les colonnes d'audit si manquantes
         for column_name in columns:
             if not _has_column(db, table_name, column_name):
                 db.execute(f'ALTER TABLE "{table_name}" ADD COLUMN {column_name} DATETIME')
-
-    db.execute('''
-        UPDATE "user"
-        SET created_at = COALESCE(created_at, date_inscription),
-            updated_at = COALESCE(updated_at, date_inscription)
-        WHERE created_at IS NULL OR updated_at IS NULL
-    ''')
-    db.execute('''
-        UPDATE sentier
-        SET created_at = COALESCE(created_at, date_ajout),
-            updated_at = COALESCE(updated_at, date_ajout)
-        WHERE created_at IS NULL OR updated_at IS NULL
-    ''')
-    db.execute('''
-        UPDATE rapport
-        SET created_at = COALESCE(created_at, date_rapport),
-            updated_at = COALESCE(updated_at, date_rapport)
-        WHERE created_at IS NULL OR updated_at IS NULL
-    ''')
+        
+        # Migrer les données depuis les anciennes colonnes
+        db.execute(f'''
+            UPDATE "{table_name}"
+            SET created_at = COALESCE(created_at, {legacy_column}),
+                updated_at = COALESCE(updated_at, {legacy_column})
+            WHERE created_at IS NULL OR updated_at IS NULL
+        ''')
 
 
 def _format_dt(value):
@@ -47,6 +45,16 @@ def _format_dt(value):
 
 
 def _seed_demo_data(db):
+    """Insère des données de démonstration pour faciliter les tests.
+    
+    À utiliser uniquement en développement local. Ces données incluent :
+    - 3 utilisateurs avec différents niveaux (débutant, intermédiaire, expert)
+    - 6 sentiers variés (différentes régions, difficultés)
+    - 8 rapports récents simulant l'activité
+    
+    Les données sont cohérentes : rapports avec des dates échelonnées
+    pour montrer l'expiration après 7 jours.
+    """
     now = datetime.utcnow()
 
     users = [
